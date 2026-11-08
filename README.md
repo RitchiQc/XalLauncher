@@ -17,7 +17,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 ### Instances et lancement
 
 - Instances isolées : mods, mondes, configurations et captures séparés.
-- Versions release et snapshots du manifeste officiel Mojang.
+- Versions release et snapshots du manifeste officiel Mojang, avec source officielle de repli et nouvelle tentative en cas d’échec réseau.
 - Vanilla, Fabric, Quilt, Forge et NeoForge.
 - Détection de la version Java requise et installation automatique d’Eclipse Temurin.
 - Téléchargements HTTPS vérifiés du client, des bibliothèques, des natives et des assets.
@@ -111,8 +111,9 @@ Pour les Releases GitHub, crée la **variable** de dépôt `XAL_MICROSOFT_CLIENT
 
 ## CI/CD et Releases
 
-- `.github/workflows/ci.yml` exécute les contrôles frontend et Rust sur `main` et les pull requests, ainsi que `npm audit` et `cargo audit`.
-- `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, puis publie l’installeur signé, sa signature et `latest.json`.
+- `.github/workflows/ci.yml` exécute les contrôles frontend et Rust sur `main` et les pull requests, ainsi que `npm audit` et `cargo audit` installé depuis un binaire Windows précompilé et vérifié.
+- `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, réutilise les artefacts release des tests Rust, puis publie l’installeur signé, sa signature et `latest.json`.
+- Le profil release utilise un LTO `thin` et 4 unités de génération de code pour réduire la durée des builds.
 - Les actions GitHub sont épinglées par SHA de commit pour limiter les risques de supply-chain.
 - Le job de publication utilise l’environnement GitHub `release`. Configure dans les paramètres du dépôt des approbateurs obligatoires et une restriction aux tags protégés avant de publier.
 

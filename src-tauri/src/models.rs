@@ -76,7 +76,6 @@ pub enum Loader {
 #[serde(rename_all = "camelCase")]
 pub struct MinecraftVersion {
     pub id: String,
-    #[serde(rename = "type")]
     pub kind: String,
     pub release_time: String,
 }

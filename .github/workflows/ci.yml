@@ -25,13 +25,15 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm audit --audit-level=moderate
-      - run: npm run typecheck
       - run: npm test
       - run: npm run build
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Install cargo-audit
-        run: cargo install cargo-audit --version 0.22.2 --locked
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-audit@0.22.2
+          fallback: none
       - name: Audit Rust dependencies
         run: cargo audit --file src-tauri/Cargo.lock

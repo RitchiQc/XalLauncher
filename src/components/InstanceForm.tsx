@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { loaderLabels } from "@/lib/format";
 import { useLauncher } from "@/state/LauncherContext";
 import type { Instance, InstanceInput, Loader, LoaderVersion, MinecraftVersion } from "@/types";
@@ -29,16 +29,27 @@ export function InstanceForm({ existing, onClose, onSaved }: { existing?: Instan
   const [loaderVersions, setLoaderVersions] = useState<LoaderVersion[]>([]);
   const [snapshots, setSnapshots] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [versionError, setVersionError] = useState("");
+  const [versionsAttempt, setVersionsAttempt] = useState(0);
   const [loaderLoading, setLoaderLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const patch = <K extends keyof InstanceInput>(key: K, value: InstanceInput[K]) => setInput((current) => ({ ...current, [key]: value }));
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setVersionError("");
     void api.versions().then((items) => {
+      if (!active) return;
       setVersions(items);
-      if (!input.versionId) patch("versionId", items.find((item) => item.kind === "release")?.id ?? items[0]?.id ?? "");
-    }).finally(() => setLoading(false));
-  }, []);
+      setInput((current) => current.versionId ? current : { ...current, versionId: items.find((item) => item.kind === "release")?.id ?? items[0]?.id ?? "" });
+    }).catch((error) => {
+      if (!active) return;
+      setVersions([]);
+      setVersionError(errorMessage(error));
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [versionsAttempt]);
 
   useEffect(() => {
     if (!input.versionId || input.loader === "vanilla") { setLoaderVersions([]); return; }
@@ -62,10 +73,13 @@ export function InstanceForm({ existing, onClose, onSaved }: { existing?: Instan
   return <Modal title={existing ? "Modifier l’instance" : "Nouvelle instance"} description="Chaque installation conserve ses propres mods, mondes et réglages." onClose={onClose} wide>
     <div className="form-grid">
       <label className="field field-full"><span>Nom de l’instance</span><input autoFocus value={input.name} onChange={(event) => patch("name", event.target.value)} placeholder="Mon aventure" maxLength={48} /></label>
-      <label className="field"><span>Minecraft</span><div className="select-with-icon"><select value={input.versionId} onChange={(event) => patch("versionId", event.target.value)} disabled={loading}>
+      <label className="field"><span>Minecraft</span><div className="select-with-icon"><select value={input.versionId} onChange={(event) => patch("versionId", event.target.value)} disabled={loading || !versions.length}>
+        {loading ? <option value="">Chargement des versions…</option> : null}
+        {!loading && !versions.length ? <option value="">Aucune version disponible</option> : null}
         {versions.filter((version) => snapshots || version.kind === "release").map((version) => <option key={version.id} value={version.id}>{version.id}{version.kind === "snapshot" ? " · Snapshot" : ""}</option>)}
       </select>{loading ? <LoaderCircle className="spin" size={16} /> : null}</div></label>
       <label className="field"><span>Modloader</span><select value={input.loader} onChange={(event) => patch("loader", event.target.value as Loader)}>{loaders.map((loader) => <option value={loader} key={loader}>{loaderLabels[loader]}</option>)}</select></label>
+      {versionError ? <div className="form-error field-full" role="alert"><span>Impossible de charger les versions Minecraft. {versionError}</span><Button type="button" variant="secondary" onClick={() => setVersionsAttempt((current) => current + 1)}>Réessayer</Button></div> : null}
       {input.loader !== "vanilla" ? <label className="field field-full"><span>Version de {loaderLabels[input.loader]}</span><div className="select-with-icon"><select value={input.loaderVersion ?? ""} onChange={(event) => patch("loaderVersion", event.target.value)} disabled={loaderLoading || !loaderVersions.length}>
         <option value="">{loaderLoading ? "Chargement des versions…" : loaderVersions.length ? "Sélectionner" : "Aucune version compatible"}</option>
         {loaderVersions.map((version) => <option value={version.version} key={version.version}>{version.version}{version.stable ? " · Stable" : " · Expérimentale"}</option>)}

@@ -23,7 +23,7 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm test
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --release --manifest-path src-tauri/Cargo.toml
       - name: Build and sign XalLauncher
         run: npm run tauri build
         env:

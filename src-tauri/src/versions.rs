@@ -4,8 +4,10 @@ use crate::models::{Loader, LoaderVersion, MinecraftVersion};
 use serde::Deserialize;
 use serde_json::Value;
 
-pub const VERSION_MANIFEST: &str =
-    "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
+pub const VERSION_MANIFESTS: [&str; 2] = [
+    "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+    "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json",
+];
 
 #[derive(Deserialize)]
 struct VersionManifest {
@@ -22,7 +24,14 @@ struct ManifestVersion {
 }
 
 async fn manifest(client: &reqwest::Client) -> Result<VersionManifest> {
-    get_json(client, VERSION_MANIFEST).await
+    let mut last_error = None;
+    for url in VERSION_MANIFESTS {
+        match get_json::<VersionManifest>(client, url).await {
+            Ok(manifest) => return Ok(manifest),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| AppError::new("Aucun manifeste Minecraft configuré")))
 }
 
 pub async fn version_json(client: &reqwest::Client, id: &str) -> Result<Value> {
@@ -35,12 +44,8 @@ pub async fn version_json(client: &reqwest::Client, id: &str) -> Result<Value> {
     get_json(client, &entry.url).await
 }
 
-#[tauri::command]
-pub async fn list_versions(
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<Vec<MinecraftVersion>> {
-    let manifest = manifest(&state.client).await?;
-    Ok(manifest
+fn supported_versions(manifest: VersionManifest) -> Vec<MinecraftVersion> {
+    manifest
         .versions
         .into_iter()
         .filter(|version| matches!(version.kind.as_str(), "release" | "snapshot"))
@@ -49,7 +54,39 @@ pub async fn list_versions(
             kind: version.kind,
             release_time: version.release_time,
         })
-        .collect())
+        .collect()
+}
+
+#[tauri::command]
+pub async fn list_versions(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<Vec<MinecraftVersion>> {
+    Ok(supported_versions(manifest(&state.client).await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_keeps_only_supported_versions() {
+        let manifest: VersionManifest = serde_json::from_value(serde_json::json!({
+            "versions": [
+                {"id": "1.21.4", "type": "release", "releaseTime": "2024-12-03T10:00:00+00:00", "url": "https://example.test/release"},
+                {"id": "25w02a", "type": "snapshot", "releaseTime": "2025-01-08T10:00:00+00:00", "url": "https://example.test/snapshot"},
+                {"id": "b1.7.3", "type": "old_beta", "releaseTime": "2011-07-08T10:00:00+00:00", "url": "https://example.test/beta"}
+            ]
+        })).unwrap();
+        let versions = supported_versions(manifest);
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].id, "1.21.4");
+        assert_eq!(versions[0].kind, "release");
+        assert_eq!(versions[1].kind, "snapshot");
+        let json = serde_json::to_value(&versions[0]).unwrap();
+        assert_eq!(json["kind"], "release");
+        assert_eq!(json["releaseTime"], "2024-12-03T10:00:00+00:00");
+        assert!(json.get("type").is_none());
+    }
 }
 
 #[derive(Deserialize)]
