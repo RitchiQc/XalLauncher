@@ -1,0 +1,63 @@
+name: Release Windows
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build and sign XalLauncher
+        run: npm run tauri build
+        env:
+          XAL_MICROSOFT_CLIENT_ID: ${{ vars.XAL_MICROSOFT_CLIENT_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Prepare updater manifest
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
+          $source = 'src-tauri/target/release/bundle/nsis'
+          $setup = Get-ChildItem $source -Filter '*-setup.exe' | Where-Object { $_.Name -notlike 'XalLauncher-v*' } | Select-Object -First 1
+          $signature = Get-ChildItem $source -Filter '*-setup.exe.sig' | Select-Object -First 1
+          if (-not $setup -or -not $signature) { throw 'Signed updater artifacts not found' }
+          $setupName = "XalLauncher-$tag-x64-setup.exe"
+          Copy-Item $setup.FullName (Join-Path $source $setupName)
+          Copy-Item $signature.FullName (Join-Path $source "$setupName.sig")
+          $manifest = @{
+            version = $version
+            notes = "XalLauncher $tag - https://github.com/RitchiQc/XalLauncher/releases/tag/$tag"
+            pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = @{
+              'windows-x86_64' = @{
+                signature = (Get-Content $signature.FullName -Raw).Trim()
+                url = "https://github.com/RitchiQc/XalLauncher/releases/download/$tag/$setupName"
+              }
+            }
+          } | ConvertTo-Json -Depth 6
+          [IO.File]::WriteAllText((Join-Path $source 'latest.json'), $manifest, [Text.UTF8Encoding]::new($false))
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            src-tauri/target/release/bundle/nsis/latest.json
+            src-tauri/target/release/bundle/nsis/XalLauncher-*-setup.exe
+            src-tauri/target/release/bundle/nsis/XalLauncher-*-setup.exe.sig

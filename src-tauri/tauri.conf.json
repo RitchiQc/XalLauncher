@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "XalLauncher",
+  "version": "0.1.0",
+  "identifier": "studio.xaltar.xallauncher",
+  "build": {
+    "beforeDevCommand": "npm.cmd run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm.cmd run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "XalLauncher",
+        "width": 1360,
+        "height": 840,
+        "minWidth": 1080,
+        "minHeight": 700,
+        "center": true,
+        "backgroundColor": "#090b12"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost https:;",
+      "assetProtocol": { "enable": true, "scope": ["$APPDATA/**", "$LOCALAPPDATA/**"] }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis"],
+    "publisher": "Xaltar Studio",
+    "copyright": "Copyright © 2026 Xaltar Studio",
+    "category": "Games",
+    "shortDescription": "Un launcher Minecraft moderne par Xaltar Studio",
+    "longDescription": "Gérez vos instances, versions et contenus Minecraft dans une interface moderne.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "windows": { "nsis": { "installMode": "currentUser", "displayLanguageSelector": false } }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhEOTFCRjFGMEE5RkVFQzgKUldUSTdwOEtINytSalRwK3VyU0Uyc2RBcDNKQjByQlBzLzk0TE1yRU1hQUJRY21RNnEyWU9kQ0sK",
+      "endpoints": ["https://github.com/RitchiQc/XalLauncher/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  }
+}

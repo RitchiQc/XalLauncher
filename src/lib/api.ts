@@ -1,0 +1,47 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { Account, AppSettings, BackupEntry, ContentEntry, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ProjectHit, ServerEntry, ServerStatus } from "@/types";
+
+export const api = {
+  settings: () => invoke<AppSettings>("get_settings"),
+  saveSettings: (settings: AppSettings) => invoke<AppSettings>("update_settings", { settings }),
+  accounts: () => invoke<Account[]>("list_accounts"),
+  login: (clientId: string) => invoke<Account>("begin_microsoft_login", { clientId }),
+  removeAccount: (accountId: string) => invoke<Account[]>("remove_account", { accountId }),
+  refreshAccount: (accountId: string) => invoke<Account>("refresh_account", { accountId }),
+  setCape: (accountId: string, capeId: string | null) => invoke<Account>("set_active_cape", { accountId, capeId }),
+  versions: () => invoke<MinecraftVersion[]>("list_versions"),
+  loaderVersions: (loader: Loader, versionId: string) => invoke<LoaderVersion[]>("list_loader_versions", { loader, versionId }),
+  instances: () => invoke<Instance[]>("list_instances"),
+  createInstance: (input: InstanceInput) => invoke<Instance>("create_instance", { input }),
+  updateInstance: (id: string, input: InstanceInput) => invoke<Instance>("update_instance", { id, input }),
+  duplicateInstance: (id: string) => invoke<Instance>("duplicate_instance", { id }),
+  deleteInstance: (id: string, deleteFiles: boolean) => invoke<Instance[]>("delete_instance", { id, deleteFiles }),
+  openFolder: (id: string) => invoke<void>("open_instance_folder", { id }),
+  launch: (id: string, accountId: string, serverOverride?: string) => invoke<LaunchResult>("launch_instance", { id, accountId, serverOverride }),
+  stop: (id: string) => invoke<void>("stop_game", { id }),
+  running: () => invoke<string[]>("running_games"),
+  log: (id: string) => invoke<string>("read_instance_log", { id }),
+  search: (query: string, projectType: string, versionId?: string, loader?: Loader, offset = 0) => invoke<ProjectHit[]>("search_modrinth", { query, projectType, versionId, loader, offset }),
+  installProject: (projectId: string, instanceId: string) => invoke<ContentEntry>("install_modrinth_project", { projectId, instanceId }),
+  installModpack: (projectId: string) => invoke<Instance>("install_modrinth_modpack", { projectId }),
+  importModpack: (path: string, name?: string) => invoke<Instance>("import_modrinth_pack", { path, name }),
+  content: (instanceId: string, kind: string) => invoke<ContentEntry[]>("list_content", { instanceId, kind }),
+  toggleContent: (instanceId: string, kind: string, fileName: string) => invoke<ContentEntry>("toggle_content", { instanceId, kind, fileName }),
+  deleteContent: (instanceId: string, kind: string, fileName: string) => invoke<void>("delete_content", { instanceId, kind, fileName }),
+  importContent: (instanceId: string, kind: string, sourcePath: string) => invoke<ContentEntry>("import_content", { instanceId, kind, sourcePath }),
+  contentPath: (instanceId: string, kind: string, fileName: string) => invoke<string>("content_file_path", { instanceId, kind, fileName }),
+  servers: () => invoke<ServerEntry[]>("list_servers"),
+  saveServer: (server: ServerEntry) => invoke<ServerEntry>("upsert_server", { server }),
+  deleteServer: (id: string) => invoke<ServerEntry[]>("delete_server", { id }),
+  queryServer: (server: ServerEntry) => invoke<ServerStatus>("query_server", { server }),
+  backups: (instanceId: string) => invoke<BackupEntry[]>("list_backups", { instanceId }),
+  createBackup: (instanceId: string, name?: string) => invoke<BackupEntry>("create_backup", { instanceId, name }),
+  restoreBackup: (backupId: string) => invoke<void>("restore_backup", { backupId }),
+  deleteBackup: (backupId: string) => invoke<void>("delete_backup", { backupId }),
+};
+
+export function errorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  return "Une erreur inattendue est survenue";
+}
