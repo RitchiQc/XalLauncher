@@ -1,4 +1,4 @@
-use crate::download::download_file;
+use crate::download::{download_file_with_checksum, maven_checksum};
 use crate::error::{AppError, Result, ResultExt};
 use crate::http::get_json;
 use crate::models::{Instance, Loader};
@@ -61,11 +61,12 @@ pub async fn prepare(
                 "{}-{loader_version}-installer.jar",
                 if is_forge { "forge" } else { "neoforge" }
             ));
-            download_file(
+            let checksum = maven_checksum(client, &url).await?;
+            download_file_with_checksum(
                 client,
                 &url,
                 &installer,
-                None,
+                Some(&checksum),
                 app,
                 "launch",
                 "Installateur du modloader",

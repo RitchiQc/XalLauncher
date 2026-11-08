@@ -1,4 +1,4 @@
-use crate::download::download_file;
+use crate::download::{download_file_with_checksum, valid_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::{ensure_success, get_json};
 use crate::models::{Instance, Loader, ProgressEvent};
@@ -142,47 +142,52 @@ async fn install_pack_files(
         let mut output = fs::File::create(target)?;
         std::io::copy(&mut entry, &mut output)?;
     }
-    let jobs: Vec<(String, String, String)> = index["files"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|file| {
-            if file["env"]["client"] == "unsupported" {
-                return None;
-            }
-            let path = file["path"].as_str()?.to_string();
-            let url = file["downloads"]
-                .as_array()?
-                .iter()
-                .filter_map(Value::as_str)
-                .next()?
-                .to_string();
-            let sha1 = file["hashes"]["sha1"].as_str().unwrap_or("").to_string();
-            Some((path, url, sha1))
-        })
-        .collect();
+    let mut jobs = Vec::new();
+    for file in index["files"].as_array().into_iter().flatten() {
+        if file["env"]["client"] == "unsupported" {
+            continue;
+        }
+        let path = file["path"]
+            .as_str()
+            .ok_or_else(|| AppError::new("Fichier du modpack sans chemin"))?
+            .to_string();
+        let url = file["downloads"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .next()
+            .ok_or_else(|| AppError::new("Fichier du modpack sans URL"))?
+            .to_string();
+        let checksum = file["hashes"]["sha512"]
+            .as_str()
+            .map(|hash| Checksum::Sha512(hash.to_string()))
+            .or_else(|| {
+                file["hashes"]["sha1"]
+                    .as_str()
+                    .map(|hash| Checksum::Sha1(hash.to_string()))
+            })
+            .ok_or_else(|| AppError::new(format!("Fichier du modpack sans checksum : {path}")))?;
+        jobs.push((path, url, checksum));
+    }
     for (path, _, _) in &jobs {
         safe_relative(path)?;
     }
     let total = jobs.len();
     let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let concurrency = store.settings()?.download_concurrency.clamp(1, 32);
-    stream::iter(jobs.into_iter().map(|(path, url, sha1)| {
+    stream::iter(jobs.into_iter().map(|(path, url, checksum)| {
         let client = client.clone();
         let app = app.clone();
         let completed = completed.clone();
         let game_dir = game_dir.to_path_buf();
         async move {
             let destination = game_dir.join(safe_relative(&path)?);
-            download_file(
+            download_file_with_checksum(
                 &client,
                 &url,
                 &destination,
-                if sha1.is_empty() {
-                    None
-                } else {
-                    Some(sha1.as_str())
-                },
+                Some(&checksum),
                 None,
                 "modpack",
                 &path,
@@ -250,6 +255,9 @@ pub async fn install_modrinth_modpack(
     let name = file["filename"]
         .as_str()
         .ok_or_else(|| AppError::new("Archive sans nom"))?;
+    if name.contains(['/', '\\']) {
+        return Err(AppError::new("Nom d’archive distant dangereux"));
+    }
     let archive = state.store.root().join("cache").join(name);
     let response = state
         .client
@@ -262,12 +270,21 @@ pub async fn install_modrinth_modpack(
         fs::create_dir_all(parent)?;
     }
     fs::write(&archive, bytes)?;
-    if let Some(expected) = file["hashes"]["sha1"].as_str() {
-        let actual = crate::download::sha1_file(&archive)?;
-        if !actual.eq_ignore_ascii_case(expected) {
-            let _ = fs::remove_file(&archive);
-            return Err(AppError::new("Somme SHA-1 du modpack incorrecte"));
-        }
+    let checksum = file["hashes"]["sha512"]
+        .as_str()
+        .map(|hash| Checksum::Sha512(hash.to_string()))
+        .or_else(|| {
+            file["hashes"]["sha1"]
+                .as_str()
+                .map(|hash| Checksum::Sha1(hash.to_string()))
+        })
+        .ok_or_else(|| AppError::new("Archive du modpack sans checksum"))?;
+    if !valid_checksum(&archive, Some(&checksum)) {
+        let _ = fs::remove_file(&archive);
+        return Err(AppError::new(format!(
+            "Somme {} du modpack incorrecte",
+            checksum.name()
+        )));
     }
     import_pack(
         state.client.clone(),

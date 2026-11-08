@@ -6,6 +6,7 @@ import { InstanceArtwork } from "@/components/InstanceArtwork";
 import { InstanceForm } from "@/components/InstanceForm";
 import { Button, EmptyState, Modal, PageHeader } from "@/components/UI";
 import { api } from "@/lib/api";
+import { confirmCodeExecution } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
 import type { Instance } from "@/types";
 
@@ -27,6 +28,7 @@ export function InstancesPage() {
     if (result) await refreshInstances();
   }
   async function importPack() {
+    if (!confirmCodeExecution("Ce modpack")) return;
     const path = await open({ multiple: false, filters: [{ name: "Modpack Modrinth", extensions: ["mrpack"] }] });
     if (!path) return;
     setBusy(true);

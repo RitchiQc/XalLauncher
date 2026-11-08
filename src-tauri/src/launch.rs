@@ -1,5 +1,5 @@
 use crate::auth::valid_token;
-use crate::download::download_file;
+use crate::download::{download_file, download_file_with_checksum, maven_checksum, Checksum};
 use crate::error::{AppError, Result, ResultExt};
 use crate::loaders::maven_path;
 use crate::models::{GameLog, LaunchResult, ProgressEvent};
@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
@@ -69,6 +69,19 @@ fn rules_allow(rules: Option<&Vec<Value>>) -> bool {
         }
     }
     allowed
+}
+
+fn validate_artifact_path(path: &str) -> Result<()> {
+    let candidate = Path::new(path);
+    if candidate.as_os_str().is_empty()
+        || candidate.is_absolute()
+        || candidate
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+    {
+        return Err(AppError::new("Chemin de bibliothèque distant dangereux"));
+    }
+    Ok(())
 }
 
 fn value_arguments(values: Option<&Vec<Value>>) -> Vec<String> {
@@ -231,6 +244,7 @@ async fn download_libraries(
             .as_str()
             .map(str::to_string)
             .unwrap_or_else(|| coordinate_path.clone());
+        validate_artifact_path(&artifact_path)?;
         if artifact.is_object() || library.get("url").is_some() {
             let path = store.root().join("libraries").join(&artifact_path);
             let url = artifact["url"]
@@ -238,16 +252,12 @@ async fn download_libraries(
                 .filter(|url| !url.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("{}/{artifact_path}", base_url.trim_end_matches('/')));
-            download_file(
-                client,
-                &url,
-                &path,
-                artifact["sha1"].as_str(),
-                None,
-                "launch",
-                name,
-            )
-            .await?;
+            let checksum = match artifact["sha1"].as_str() {
+                Some(hash) => Checksum::Sha1(hash.to_string()),
+                None => maven_checksum(client, &url).await?,
+            };
+            download_file_with_checksum(client, &url, &path, Some(&checksum), None, "launch", name)
+                .await?;
             if seen.insert(path.clone()) {
                 classpath.push(path);
             }
@@ -272,20 +282,15 @@ async fn download_libraries(
                 },
             );
             if let Some(native) = library["downloads"]["classifiers"].get(&classifier) {
-                let path = native["path"]
-                    .as_str()
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| {
-                        store.root().join("libraries").join(format!(
-                            "{}-{}.jar",
-                            coordinate_path.trim_end_matches(".jar"),
-                            classifier
-                        ))
-                    });
-                let path = if path.is_absolute() {
-                    path
+                let path = if let Some(relative) = native["path"].as_str() {
+                    validate_artifact_path(relative)?;
+                    store.root().join("libraries").join(relative)
                 } else {
-                    store.root().join("libraries").join(path)
+                    store.root().join("libraries").join(format!(
+                        "{}-{}.jar",
+                        coordinate_path.trim_end_matches(".jar"),
+                        classifier
+                    ))
                 };
                 let url = native["url"]
                     .as_str()
@@ -298,11 +303,15 @@ async fn download_libraries(
                             path.file_name().unwrap_or_default().to_string_lossy()
                         )
                     });
-                download_file(
+                let checksum = match native["sha1"].as_str() {
+                    Some(hash) => Checksum::Sha1(hash.to_string()),
+                    None => maven_checksum(client, &url).await?,
+                };
+                download_file_with_checksum(
                     client,
                     &url,
                     &path,
-                    native["sha1"].as_str(),
+                    Some(&checksum),
                     None,
                     "launch",
                     name,
@@ -465,11 +474,17 @@ pub async fn launch_instance(
         .join("versions")
         .join(base_id)
         .join(format!("{base_id}.jar"));
-    download_file(
+    let game_checksum = Checksum::Sha1(
+        client_download["sha1"]
+            .as_str()
+            .ok_or_else(|| AppError::new("Jeu Minecraft sans checksum SHA-1"))?
+            .to_string(),
+    );
+    download_file_with_checksum(
         &state.client,
         client_download["url"].as_str().unwrap_or(""),
         &game_jar,
-        client_download["sha1"].as_str(),
+        Some(&game_checksum),
         None,
         "launch",
         "Jeu Minecraft",
@@ -773,7 +788,7 @@ pub fn read_instance_log(id: String, state: tauri::State<'_, crate::AppState>) -
 
 #[cfg(test)]
 mod tests {
-    use super::{rules_allow, substitute};
+    use super::{rules_allow, substitute, validate_artifact_path};
     use serde_json::json;
 
     #[test]
@@ -783,6 +798,16 @@ mod tests {
         assert_eq!(rules_allow(Some(&windows)), cfg!(windows));
         let forbidden = vec![json!({"action":"disallow","os":{"name":"windows"}})];
         assert_eq!(rules_allow(Some(&forbidden)), !cfg!(windows));
+    }
+
+    #[test]
+    fn rejects_dangerous_artifact_paths() {
+        assert!(validate_artifact_path("org/example/lib/1.0/lib.jar").is_ok());
+        assert!(validate_artifact_path("../outside.jar").is_err());
+        assert!(validate_artifact_path("org/../../outside.jar").is_err());
+        assert!(validate_artifact_path("C:/outside.jar").is_err());
+        assert!(validate_artifact_path("/outside.jar").is_err());
+        assert!(validate_artifact_path("").is_err());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::download::download_file;
+use crate::download::{download_file_with_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::{ensure_success, get_json};
 use crate::models::{ContentEntry, Loader, ProjectHit};
@@ -251,12 +251,20 @@ async fn install_version(
     let url = file["url"]
         .as_str()
         .ok_or_else(|| AppError::new("URL de téléchargement absente"))?;
-    let sha1 = file["hashes"]["sha1"].as_str();
-    download_file(
+    let checksum = file["hashes"]["sha512"]
+        .as_str()
+        .map(|hash| Checksum::Sha512(hash.to_string()))
+        .or_else(|| {
+            file["hashes"]["sha1"]
+                .as_str()
+                .map(|hash| Checksum::Sha1(hash.to_string()))
+        })
+        .ok_or_else(|| AppError::new("Publication Modrinth sans checksum"))?;
+    download_file_with_checksum(
         &state.client,
         url,
         &destination,
-        sha1,
+        Some(&checksum),
         Some(app),
         "content",
         project["title"].as_str().unwrap_or(file_name),

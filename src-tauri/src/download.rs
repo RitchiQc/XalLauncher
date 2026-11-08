@@ -4,14 +4,38 @@ use crate::models::ProgressEvent;
 use futures_util::StreamExt;
 use reqwest::{Client, StatusCode};
 use sha1::{Digest, Sha1};
+use sha2::{Sha256, Sha512};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
-pub fn sha1_file(path: &Path) -> Result<String> {
+#[derive(Clone, Debug)]
+pub enum Checksum {
+    Sha1(String),
+    Sha256(String),
+    Sha512(String),
+}
+
+impl Checksum {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Sha1(_) => "SHA-1",
+            Self::Sha256(_) => "SHA-256",
+            Self::Sha512(_) => "SHA-512",
+        }
+    }
+
+    fn value(&self) -> &str {
+        match self {
+            Self::Sha1(value) | Self::Sha256(value) | Self::Sha512(value) => value,
+        }
+    }
+}
+
+fn hash_file<D: Digest>(path: &Path) -> Result<String> {
     let mut file = fs::File::open(path)?;
-    let mut hasher = Sha1::new();
+    let mut hasher = D::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
@@ -23,13 +47,53 @@ pub fn sha1_file(path: &Path) -> Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-pub fn valid_sha1(path: &Path, expected: Option<&str>) -> bool {
+pub fn sha256_file(path: &Path) -> Result<String> {
+    hash_file::<Sha256>(path)
+}
+
+pub fn checksum_file(path: &Path, expected: &Checksum) -> Result<String> {
     match expected {
-        Some(hash) if path.is_file() => sha1_file(path)
-            .map(|actual| actual.eq_ignore_ascii_case(hash))
+        Checksum::Sha1(_) => hash_file::<Sha1>(path),
+        Checksum::Sha256(_) => hash_file::<Sha256>(path),
+        Checksum::Sha512(_) => hash_file::<Sha512>(path),
+    }
+}
+
+pub fn valid_checksum(path: &Path, expected: Option<&Checksum>) -> bool {
+    match expected {
+        Some(hash) if path.is_file() => checksum_file(path, hash)
+            .map(|actual| actual.eq_ignore_ascii_case(hash.value()))
             .unwrap_or(false),
         _ => false,
     }
+}
+
+pub async fn maven_checksum(client: &Client, url: &str) -> Result<Checksum> {
+    let mut last_error = "Aucun checksum Maven disponible".to_string();
+    for (extension, length) in [("sha256", 64), ("sha1", 40)] {
+        let checksum_url = format!("{url}.{extension}");
+        match client.get(&checksum_url).send().await {
+            Ok(response) if response.status().is_success() => match response.text().await {
+                Ok(text) => {
+                    let value = text.split_whitespace().next().unwrap_or("");
+                    if value.len() == length && value.chars().all(|char| char.is_ascii_hexdigit()) {
+                        return Ok(if length == 64 {
+                            Checksum::Sha256(value.to_string())
+                        } else {
+                            Checksum::Sha1(value.to_string())
+                        });
+                    }
+                    last_error = format!("Checksum {extension} invalide pour {url}");
+                }
+                Err(error) => last_error = error.to_string(),
+            },
+            Ok(response) => {
+                last_error = format!("Checksum {extension} absent ({})", response.status())
+            }
+            Err(error) => last_error = error.to_string(),
+        }
+    }
+    Err(AppError::new(last_error))
 }
 
 fn emit(app: Option<&AppHandle>, operation: &str, label: &str, current: u64, total: u64) {
@@ -55,8 +119,37 @@ pub async fn download_file(
     operation: &str,
     label: &str,
 ) -> Result<()> {
-    if valid_sha1(destination, expected_sha1)
-        || (expected_sha1.is_none() && destination.is_file() && destination.metadata()?.len() > 0)
+    let expected = expected_sha1.map(|hash| Checksum::Sha1(hash.to_string()));
+    download_file_with_checksum(
+        client,
+        url,
+        destination,
+        expected.as_ref(),
+        app,
+        operation,
+        label,
+    )
+    .await
+}
+
+pub async fn download_file_with_checksum(
+    client: &Client,
+    url: &str,
+    destination: &Path,
+    expected: Option<&Checksum>,
+    app: Option<&AppHandle>,
+    operation: &str,
+    label: &str,
+) -> Result<()> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|_| AppError::new(format!("URL de téléchargement invalide pour {label}")))?;
+    if parsed.scheme() != "https" {
+        return Err(AppError::new(format!(
+            "Téléchargement refusé pour {label} : HTTPS obligatoire"
+        )));
+    }
+    if valid_checksum(destination, expected)
+        || (expected.is_none() && destination.is_file() && destination.metadata()?.len() > 0)
     {
         return Ok(());
     }
@@ -128,10 +221,9 @@ pub async fn download_file(
                     last_error = error;
                     continue;
                 }
-                if let Some(expected) = expected_sha1 {
-                    let actual = sha1_file(&partial)?;
-                    if !actual.eq_ignore_ascii_case(expected) {
-                        last_error = format!("Somme SHA-1 incorrecte pour {label}");
+                if let Some(expected) = expected {
+                    if !valid_checksum(&partial, Some(expected)) {
+                        last_error = format!("Somme {} incorrecte pour {label}", expected.name());
                         let _ = fs::remove_file(&partial);
                         continue;
                     }
@@ -159,4 +251,52 @@ pub async fn download_file(
     Err(AppError::new(format!(
         "Échec après plusieurs tentatives : {last_error}"
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{valid_checksum, Checksum};
+    use std::fs;
+
+    #[test]
+    fn verifies_supported_checksums() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("artifact.jar");
+        fs::write(&path, b"abc").unwrap();
+        let checksums = [
+            Checksum::Sha1("a9993e364706816aba3e25717850c26c9cd0d89d".into()),
+            Checksum::Sha256(
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+            ),
+            Checksum::Sha512(
+                concat!(
+                    "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a",
+                    "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+                )
+                .into(),
+            ),
+        ];
+        for checksum in &checksums {
+            assert!(valid_checksum(&path, Some(checksum)));
+        }
+        let wrong = Checksum::Sha256("00".repeat(32));
+        assert!(!valid_checksum(&path, Some(&wrong)));
+    }
+
+    #[tokio::test]
+    async fn refuses_insecure_downloads() {
+        let directory = tempfile::tempdir().unwrap();
+        let error = super::download_file_with_checksum(
+            &reqwest::Client::new(),
+            "http://example.com/artifact.jar",
+            &directory.path().join("artifact.jar"),
+            None,
+            None,
+            "test",
+            "test",
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("HTTPS obligatoire"));
+    }
 }

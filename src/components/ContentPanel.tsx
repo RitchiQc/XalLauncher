@@ -4,6 +4,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { Download, FileBox, Image, Power, RefreshCw, Trash2, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
+import { confirmCodeExecution } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
 import type { ContentEntry } from "@/types";
 import { Button, EmptyState } from "./UI";
@@ -26,6 +27,7 @@ export function ContentPanel({ instanceId, kind }: { instanceId: string; kind: s
   }, [instanceId, items, kind]);
 
   async function importFile() {
+    if (kind === "mod" && !confirmCodeExecution("Ce mod")) return;
     const extensions = kind === "mod" ? ["jar"] : ["zip"];
     const path = await open({ multiple: false, filters: [{ name: labels[kind], extensions }] });
     if (!path) return;

@@ -1,11 +1,85 @@
-use crate::download::download_file;
+use crate::download::{download_file_with_checksum, sha256_file, Checksum};
 use crate::error::{AppError, Result, ResultExt};
+use crate::http::get_json;
 use crate::models::ProgressEvent;
 use crate::store::Store;
+use serde::Deserialize;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
+
+#[derive(Deserialize)]
+struct AdoptiumAsset {
+    binary: AdoptiumBinary,
+}
+
+#[derive(Deserialize)]
+struct AdoptiumBinary {
+    package: AdoptiumPackage,
+}
+
+#[derive(Deserialize)]
+struct AdoptiumPackage {
+    checksum: String,
+    link: String,
+}
+
+async fn java_package(
+    client: &reqwest::Client,
+    major: u64,
+    os: &str,
+    arch: &str,
+    image_type: &str,
+) -> Result<AdoptiumPackage> {
+    let url = format!(
+        "https://api.adoptium.net/v3/assets/latest/{major}/hotspot?architecture={arch}&image_type={image_type}&os={os}&vendor=eclipse"
+    );
+    let assets: Vec<AdoptiumAsset> = get_json(client, &url).await?;
+    assets
+        .into_iter()
+        .next()
+        .map(|asset| asset.binary.package)
+        .ok_or_else(|| AppError::new(format!("Aucun runtime Temurin {image_type} disponible")))
+}
+
+async fn download_java(
+    client: &reqwest::Client,
+    archive: &Path,
+    major: u64,
+    os: &str,
+    arch: &str,
+    app: Option<&AppHandle>,
+) -> Result<()> {
+    let mut last_error = "Aucun runtime Java disponible".to_string();
+    for image_type in ["jre", "jdk"] {
+        let result = async {
+            let package = java_package(client, major, os, arch, image_type).await?;
+            let checksum = Checksum::Sha256(package.checksum);
+            download_file_with_checksum(
+                client,
+                &package.link,
+                archive,
+                Some(&checksum),
+                app,
+                "launch",
+                "Runtime Java Temurin",
+            )
+            .await
+        }
+        .await;
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = error.to_string();
+                let _ = fs::remove_file(archive);
+            }
+        }
+    }
+    Err(AppError::new(format!(
+        "Impossible de télécharger Java {major} : {last_error}"
+    )))
+}
 
 fn java_executable(home: &Path) -> PathBuf {
     home.join("bin")
@@ -38,8 +112,21 @@ pub async fn ensure_java(
 ) -> Result<PathBuf> {
     let runtime_root = store.root().join("runtimes");
     let destination = runtime_root.join(major.to_string());
+    let fingerprint = runtime_root.join(format!("{major}.sha256"));
     if let Some(java) = find_java(&destination, 3) {
-        return Ok(java);
+        let trusted = fs::read_to_string(&fingerprint)
+            .ok()
+            .and_then(|expected| {
+                sha256_file(&java)
+                    .ok()
+                    .map(|actual| expected.trim().eq_ignore_ascii_case(&actual))
+            })
+            .unwrap_or(false);
+        if trusted {
+            return Ok(java);
+        }
+        let _ = fs::remove_dir_all(&destination);
+        let _ = fs::remove_file(&fingerprint);
     }
     if let Some(app) = app {
         let _ = app.emit(
@@ -64,32 +151,7 @@ pub async fn ensure_java(
     } else {
         ("linux", "x64")
     };
-    let url = format!("https://api.adoptium.net/v3/binary/latest/{major}/ga/{os}/{arch}/jre/hotspot/normal/eclipse");
-    if let Err(error) = download_file(
-        client,
-        &url,
-        &archive,
-        None,
-        app,
-        "launch",
-        "Runtime Java Temurin",
-    )
-    .await
-    {
-        let _ = fs::remove_file(&archive);
-        let fallback = format!("https://api.adoptium.net/v3/binary/latest/{major}/ga/{os}/{arch}/jdk/hotspot/normal/eclipse");
-        download_file(
-            client,
-            &fallback,
-            &archive,
-            None,
-            app,
-            "launch",
-            "JDK Java Temurin",
-        )
-        .await
-        .map_err(|_| AppError::new(format!("Impossible de télécharger Java {major} : {error}")))?;
-    }
+    download_java(client, &archive, major, os, arch, app).await?;
 
     let temporary = runtime_root.join(format!(".install-{major}"));
     if temporary.exists() {
@@ -113,7 +175,9 @@ pub async fn ensure_java(
     }
     fs::rename(home, &destination).context("Finalisation de l’installation Java")?;
     let _ = fs::remove_dir_all(&temporary);
-    Ok(java_executable(&destination))
+    let java = java_executable(&destination);
+    fs::write(&fingerprint, sha256_file(&java)?)?;
+    Ok(java)
 }
 
 fn extract_zip(archive: &Path, destination: &Path) -> Result<()> {

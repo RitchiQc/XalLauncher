@@ -1,5 +1,4 @@
 use crate::error::{AppError, Result, ResultExt};
-use crate::http::ensure_success;
 use crate::models::{Account, Cape, DeviceCodeEvent};
 use chrono::{Duration, Utc};
 use keyring::Entry;
@@ -9,14 +8,24 @@ use tauri::{AppHandle, Emitter};
 
 const SERVICE: &str = "studio.xaltar.xallauncher";
 
-#[derive(Debug, Serialize, Deserialize)]
+async fn ensure_auth_success(
+    response: reqwest::Response,
+    action: &str,
+) -> Result<reqwest::Response> {
+    if response.status().is_success() {
+        return Ok(response);
+    }
+    Err(AppError::new(format!("{action} ({})", response.status())))
+}
+
+#[derive(Serialize, Deserialize)]
 struct Credentials {
     refresh_token: String,
     minecraft_token: String,
     expires_at: chrono::DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct TokenResponse {
     access_token: String,
     #[serde(default)]
@@ -78,7 +87,7 @@ pub async fn begin_microsoft_login(
         .send()
         .await
         .context("Ouverture de la connexion Microsoft")?;
-    let device = ensure_success(device, "Demande du code Microsoft").await?;
+    let device = ensure_auth_success(device, "Demande du code Microsoft").await?;
     let device: Value = device.json().await?;
     let device_code = device["device_code"]
         .as_str()
@@ -152,7 +161,7 @@ async fn minecraft_account(
             "Properties": { "AuthMethod": "RPS", "SiteName": "user.auth.xboxlive.com", "RpsTicket": format!("d={}", token.access_token) },
             "RelyingParty": "http://auth.xboxlive.com", "TokenType": "JWT"
         })).send().await?;
-    let xbl: Value = ensure_success(xbl_response, "Authentification Xbox Live")
+    let xbl: Value = ensure_auth_success(xbl_response, "Authentification Xbox Live")
         .await?
         .json()
         .await?;
@@ -189,7 +198,7 @@ async fn minecraft_account(
         .json(&json!({ "identityToken": identity }))
         .send()
         .await?;
-    let minecraft: Value = ensure_success(minecraft_response, "Authentification Minecraft")
+    let minecraft: Value = ensure_auth_success(minecraft_response, "Authentification Minecraft")
         .await?
         .json()
         .await?;
@@ -204,7 +213,7 @@ async fn minecraft_account(
         .bearer_auth(&minecraft_token)
         .send()
         .await?;
-    let entitlements: Value = ensure_success(
+    let entitlements: Value = ensure_auth_success(
         entitlements_response,
         "Vérification de la licence Minecraft",
     )
@@ -250,7 +259,7 @@ async fn fetch_profile(client: &reqwest::Client, token: &str) -> Result<Account>
         .bearer_auth(token)
         .send()
         .await?;
-    let profile: Value = ensure_success(response, "Lecture du profil Minecraft")
+    let profile: Value = ensure_auth_success(response, "Lecture du profil Minecraft")
         .await?
         .json()
         .await?;
@@ -309,10 +318,11 @@ pub async fn valid_token(state: &crate::AppState, account_id: &str) -> Result<(A
         ])
         .send()
         .await?;
-    let token: TokenResponse = ensure_success(response, "Renouvellement de la session Microsoft")
-        .await?
-        .json()
-        .await?;
+    let token: TokenResponse =
+        ensure_auth_success(response, "Renouvellement de la session Microsoft")
+            .await?
+            .json()
+            .await?;
     let (account, credentials) = minecraft_account(&state.client, token).await?;
     save_credentials(account_id, &credentials)?;
     let mut accounts = state.store.accounts()?;
@@ -371,7 +381,7 @@ pub async fn set_active_cape(
         request
     };
     let response = request.send().await?;
-    ensure_success(response, "Modification de la cape officielle").await?;
+    ensure_auth_success(response, "Modification de la cape officielle").await?;
     let account = fetch_profile(&state.client, &token).await?;
     let mut accounts = state.store.accounts()?;
     let stored = accounts

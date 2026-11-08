@@ -20,8 +20,9 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Versions release et snapshots du manifeste officiel Mojang.
 - Vanilla, Fabric, Quilt, Forge et NeoForge.
 - Détection de la version Java requise et installation automatique d’Eclipse Temurin.
-- Téléchargement vérifié du client, des bibliothèques, des natives et des assets.
-- Reprise des téléchargements, tentatives automatiques et vérification SHA-1.
+- Téléchargements HTTPS vérifiés du client, des bibliothèques, des natives et des assets.
+- Reprise des téléchargements, tentatives automatiques et vérification SHA-1, SHA-256 ou SHA-512 selon les métadonnées disponibles.
+- Java Temurin vérifié par SHA-256 ; empreinte locale de `java.exe` contrôlée avant chaque lancement.
 - RAM, arguments JVM, résolution, plein écran et serveur au démarrage par instance.
 - Classpaths longs via fichier d’arguments Java sur les runtimes compatibles.
 - Console en direct, journal local, arrêt du processus et temps de jeu.
@@ -33,6 +34,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Installation des dépendances obligatoires et remplacement des anciennes versions d’un projet.
 - Installation de la dernière publication d’un modpack Modrinth et import de fichiers `.mrpack`.
 - Import, activation/désactivation et suppression de contenus locaux.
+- Avertissement explicite avant l’installation ou l’import de mods et modpacks, qui contiennent du code Java exécutable.
 - Liste des mondes et galerie des captures d’écran.
 - Sauvegardes ZIP des mondes, restauration sécurisée et sauvegarde automatique avant restauration.
 
@@ -97,10 +99,22 @@ npm.cmd run tauri build
 
 Pour les Releases GitHub, crée la **variable** de dépôt `XAL_MICROSOFT_CLIENT_ID` dans `Settings > Secrets and variables > Actions > Variables`. Le workflow de Release l’intégrera automatiquement comme valeur par défaut. Chaque joueur se connectera ensuite avec son propre compte Microsoft, sans créer sa propre application Entra.
 
+## Sécurité et jetons
+
+- Les jetons de renouvellement Microsoft et de session Minecraft sont conservés dans le Coffre d’identification Windows. Ils ne sont ni enregistrés dans les JSON du launcher ni exposés par une commande Tauri au frontend.
+- Les corps des réponses d’erreur Microsoft/Xbox/Minecraft ne sont pas renvoyés à l’interface, afin d’éviter toute fuite accidentelle de données sensibles.
+- Les téléchargements exigent HTTPS. Les artefacts exécutables sans empreinte dans leur profil utilisent le checksum Maven SHA-256, avec SHA-1 uniquement comme repli de compatibilité. L’absence de checksum bloque leur utilisation.
+- Les publications Modrinth sont vérifiées par SHA-512 en priorité. Les fichiers en cache associés à une empreinte sont revérifiés avant réutilisation.
+- Les runtimes Java installés avant l’ajout des empreintes locales seront réinstallés une fois avant leur prochain lancement.
+
+**Limite importante :** un mod ou modpack est du code Java arbitraire exécuté dans le processus Minecraft. Le jeton de session Minecraft doit être transmis au jeu et reste donc accessible à ce code, ainsi qu’aux processus locaux capables de lire la ligne de commande Java. Un checksum garantit l’intégrité par rapport aux métadonnées de la source, pas l’innocuité de l’auteur ni la protection contre une source amont compromise. N’installez que des contenus de confiance. Le refresh token Microsoft n’est jamais transmis à Minecraft.
+
 ## CI/CD et Releases
 
-- `.github/workflows/ci.yml` exécute les contrôles frontend et Rust sur `main` et les pull requests.
+- `.github/workflows/ci.yml` exécute les contrôles frontend et Rust sur `main` et les pull requests, ainsi que `npm audit` et `cargo audit`.
 - `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, puis publie l’installeur signé, sa signature et `latest.json`.
+- Les actions GitHub sont épinglées par SHA de commit pour limiter les risques de supply-chain.
+- Le job de publication utilise l’environnement GitHub `release`. Configure dans les paramètres du dépôt des approbateurs obligatoires et une restriction aux tags protégés avant de publier.
 
 Secrets GitHub requis :
 

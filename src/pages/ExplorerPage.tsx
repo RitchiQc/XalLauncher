@@ -5,6 +5,7 @@ import { Box, Download, ExternalLink, Heart, PackageSearch, Search } from "lucid
 import { Button, EmptyState, PageHeader } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { confirmCodeExecution } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
 import type { ProjectHit } from "@/types";
 
@@ -30,6 +31,7 @@ export function ExplorerPage() {
 
   async function install(project: ProjectHit) {
     if (kind !== "modpack" && !activeInstance) { notify("Créez ou sélectionnez une instance avant l’installation", "error"); return; }
+    if ((kind === "mod" || kind === "modpack") && !confirmCodeExecution(kind === "mod" ? "Ce mod" : "Ce modpack")) return;
     setInstalling(project.projectId);
     if (kind === "modpack") {
       const instance = await perform(() => api.installModpack(project.projectId), `« ${project.title} » installé`);

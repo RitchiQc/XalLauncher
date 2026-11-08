@@ -3,17 +3,26 @@ use crate::models::{Instance, InstanceInput, Loader};
 use chrono::Utc;
 use std::fs;
 
+fn valid_version(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|char| char.is_ascii_alphanumeric() || matches!(char, '.' | '_' | '-'))
+}
+
 fn validate(input: &InstanceInput) -> Result<()> {
     if input.name.trim().len() < 2 || input.name.len() > 48 {
         return Err(AppError::new(
             "Le nom de l’instance doit contenir entre 2 et 48 caractères",
         ));
     }
-    if input.version_id.trim().is_empty() {
-        return Err(AppError::new("Sélectionnez une version de Minecraft"));
+    if !valid_version(input.version_id.trim()) {
+        return Err(AppError::new("Version de Minecraft invalide"));
     }
-    if input.loader != Loader::Vanilla && input.loader_version.as_deref().unwrap_or("").is_empty() {
-        return Err(AppError::new("Sélectionnez une version du modloader"));
+    if input.loader != Loader::Vanilla
+        && !valid_version(input.loader_version.as_deref().unwrap_or(""))
+    {
+        return Err(AppError::new("Version du modloader invalide"));
     }
     if input.memory_min < 256 || input.memory_max < input.memory_min || input.memory_max > 65536 {
         return Err(AppError::new("Allocation mémoire invalide"));
@@ -185,4 +194,20 @@ pub fn open_instance_folder(id: String, state: tauri::State<'_, crate::AppState>
     #[cfg(all(unix, not(target_os = "macos")))]
     std::process::Command::new("xdg-open").arg(path).spawn()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_version;
+
+    #[test]
+    fn validates_version_components() {
+        assert!(valid_version("1.21.1"));
+        assert!(valid_version("1.21.1-52.0.1"));
+        assert!(valid_version("0.16.9-beta.1"));
+        assert!(!valid_version("../outside"));
+        assert!(!valid_version("1.21.1/evil"));
+        assert!(!valid_version("1.21.1?url=evil"));
+        assert!(!valid_version(""));
+    }
 }

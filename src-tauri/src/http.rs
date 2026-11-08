@@ -15,6 +15,7 @@ pub fn client() -> Result<Client> {
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(120))
         .redirect(reqwest::redirect::Policy::limited(8))
+        .https_only(true)
         .build()
         .context("Initialisation du client réseau")
 }
