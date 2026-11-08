@@ -101,6 +101,16 @@ export interface ProjectHit {
   versions: string[];
 }
 
+export interface ModrinthVersion {
+  id: string;
+  name: string;
+  versionNumber: string;
+  versionType: "release" | "beta" | "alpha";
+  datePublished: string;
+  gameVersions: string[];
+  loaders: string[];
+}
+
 export interface ServerEntry {
   id: string;
   name: string;

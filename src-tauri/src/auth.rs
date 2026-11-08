@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
 const SERVICE: &str = "studio.xaltar.xallauncher";
+const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 async fn ensure_auth_success(
     response: reqwest::Response,
@@ -112,10 +113,7 @@ pub async fn begin_microsoft_login(
             .client
             .post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
             .form(&[
-                (
-                    "grant_type",
-                    "urn:ietf:params:oauth2:grant_type:device_code",
-                ),
+                ("grant_type", DEVICE_CODE_GRANT),
                 ("client_id", client_id.as_str()),
                 ("device_code", device_code.as_str()),
             ])
@@ -398,4 +396,17 @@ pub async fn set_active_cape(
         expires_at,
         ..account
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEVICE_CODE_GRANT;
+
+    #[test]
+    fn uses_microsoft_device_code_grant() {
+        assert_eq!(
+            DEVICE_CODE_GRANT,
+            "urn:ietf:params:oauth:grant-type:device_code"
+        );
+    }
 }

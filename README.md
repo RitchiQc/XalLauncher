@@ -29,12 +29,13 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 
 ### Contenu
 
-- Recherche Modrinth de mods, modpacks, resource packs et shaders.
-- Filtrage par version de Minecraft et modloader.
-- Installation des dépendances obligatoires et remplacement des anciennes versions d’un projet.
+- Recherche Modrinth de mods, resource packs et shaders directement depuis chaque instance.
+- Recherche de modpacks depuis la Bibliothèque, avec création automatique d’une nouvelle instance isolée.
+- Filtrage par version de Minecraft et modloader, avec choix de la publication exacte à installer, y compris une version plus ancienne.
+- Installation des dépendances obligatoires, respect de leurs éventuelles versions imposées et remplacement des anciennes versions d’un projet.
 - Installation de la dernière publication d’un modpack Modrinth et import de fichiers `.mrpack`.
 - Import, activation/désactivation et suppression de contenus locaux.
-- Avertissement explicite avant l’installation ou l’import de mods et modpacks, qui contiennent du code Java exécutable.
+- Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks, qui contiennent du code Java exécutable.
 - Liste des mondes et galerie des captures d’écran.
 - Sauvegardes ZIP des mondes, restauration sécurisée et sauvegarde automatique avant restauration.
 

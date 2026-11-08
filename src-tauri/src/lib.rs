@@ -66,6 +66,7 @@ pub fn run() {
             launch::running_games,
             launch::read_instance_log,
             providers::modrinth::search_modrinth,
+            providers::modrinth::list_modrinth_versions,
             providers::modrinth::install_modrinth_project,
             content::list_content,
             content::toggle_content,

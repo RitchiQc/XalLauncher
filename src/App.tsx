@@ -1,9 +1,8 @@
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Box, ChevronDown, CloudDownload, Compass, Home, Library, Server, Settings, UserRound } from "lucide-react";
+import { Box, ChevronDown, CloudDownload, Home, Library, Server, Settings, UserRound } from "lucide-react";
 import { LoadingScreen, ProgressBar, Toasts } from "@/components/UI";
 import { avatarUrl, loaderLabels } from "@/lib/format";
 import { AccountsPage } from "@/pages/AccountsPage";
-import { ExplorerPage } from "@/pages/ExplorerPage";
 import { HomePage } from "@/pages/HomePage";
 import { InstanceDetailsPage } from "@/pages/InstanceDetailsPage";
 import { InstancesPage } from "@/pages/InstancesPage";
@@ -14,12 +13,11 @@ import { useLauncher } from "@/state/LauncherContext";
 const navigation = [
   { to: "/", label: "Accueil", icon: Home, end: true },
   { to: "/instances", label: "Instances", icon: Library },
-  { to: "/explore", label: "Explorer", icon: Compass },
   { to: "/servers", label: "Serveurs", icon: Server },
   { to: "/accounts", label: "Comptes & capes", icon: UserRound },
 ];
 
-const titles: Record<string, string> = { "/": "Vue d’ensemble", "/instances": "Bibliothèque", "/explore": "Catalogue Modrinth", "/servers": "Serveurs multijoueurs", "/accounts": "Profils Minecraft", "/settings": "Préférences" };
+const titles: Record<string, string> = { "/": "Vue d’ensemble", "/instances": "Bibliothèque", "/servers": "Serveurs multijoueurs", "/accounts": "Profils Minecraft", "/settings": "Préférences" };
 
 export default function App() {
   const { ready, accounts, activeAccount, activeAccountId, setActiveAccountId, activeInstance, instances, activeInstanceId, setActiveInstanceId, progress } = useLauncher();
@@ -40,7 +38,7 @@ export default function App() {
       </div>
     </aside>
     <div className="app-main"><header className="topbar"><div><span>XalLauncher</span><strong>/</strong><span>{title}</span></div><div className="topbar-status"><span className="secure-status"><span />Services locaux prêts</span>{activeInstance ? <select value={activeInstanceId} onChange={(event) => setActiveInstanceId(event.target.value)}>{instances.map((instance) => <option value={instance.id} key={instance.id}>{instance.name}</option>)}</select> : null}</div></header>
-      <main className="content"><Routes><Route path="/" element={<HomePage />} /><Route path="/instances" element={<InstancesPage />} /><Route path="/instances/:id" element={<InstanceDetailsPage />} /><Route path="/explore" element={<ExplorerPage />} /><Route path="/servers" element={<ServersPage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></main>
+      <main className="content"><Routes><Route path="/" element={<HomePage />} /><Route path="/instances" element={<InstancesPage />} /><Route path="/instances/:id" element={<InstanceDetailsPage />} /><Route path="/explore" element={<Navigate to="/instances" replace />} /><Route path="/servers" element={<ServersPage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></main>
     </div>
     <Toasts />
   </div>;
