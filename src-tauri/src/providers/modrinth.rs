@@ -1,10 +1,12 @@
 use crate::download::{download_file_with_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::{ensure_success, get_json};
-use crate::models::{ContentEntry, Loader, ProjectHit};
+use crate::models::{ContentEntry, Loader, ProgressEvent, ProjectHit};
+use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tauri::{AppHandle, Emitter};
 
 #[derive(Deserialize)]
 struct SearchResponse {
@@ -183,6 +185,143 @@ fn select_version(
         .ok_or_else(|| AppError::new(format!("Aucune version compatible pour {project_title}")))
 }
 
+struct InstallJob {
+    project: Value,
+    version: Value,
+    project_type: String,
+}
+
+fn installed_content(
+    game_dir: &std::path::Path,
+    project_id: &str,
+    version_id: Option<&str>,
+) -> Option<ContentEntry> {
+    for (kind, folder) in [
+        ("mod", "mods"),
+        ("resourcepack", "resourcepacks"),
+        ("shader", "shaderpacks"),
+    ] {
+        let directory = game_dir.join(folder);
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with('.') || !name.ends_with(".xal.json") {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(entry.path()) else {
+                continue;
+            };
+            let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
+                continue;
+            };
+            if metadata.project_id != project_id
+                || version_id.is_some_and(|id| metadata.version_id != id)
+            {
+                continue;
+            }
+            let base = name.trim_start_matches('.').strip_suffix(".xal.json")?;
+            let enabled_path = directory.join(base);
+            let disabled_path = directory.join(format!("{base}.disabled"));
+            let (path, enabled) = if enabled_path.is_file() {
+                (enabled_path, true)
+            } else if disabled_path.is_file() {
+                (disabled_path, false)
+            } else {
+                continue;
+            };
+            let file_meta = path.metadata().ok()?;
+            return Some(ContentEntry {
+                file_name: path.file_name()?.to_string_lossy().into_owned(),
+                kind: kind.into(),
+                enabled,
+                size: file_meta.len(),
+                modified_at: file_meta
+                    .modified()
+                    .map(chrono::DateTime::<chrono::Utc>::from)
+                    .unwrap_or_else(|_| chrono::Utc::now()),
+                project_id: Some(metadata.project_id),
+                project_title: Some(metadata.project_title),
+                version_id: Some(metadata.version_id),
+                icon_url: metadata.icon_url,
+            });
+        }
+    }
+    None
+}
+
+fn ensure_version_compatible(
+    version: &Value,
+    instance: &crate::models::Instance,
+    project_type: &str,
+    project_title: &str,
+) -> Result<()> {
+    if project_type == "mod" && instance.loader == Loader::Vanilla {
+        return Err(AppError::new(
+            "Un modloader est requis pour installer ce mod",
+        ));
+    }
+    let game_compatible = version["game_versions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|game| game.as_str() == Some(instance.version_id.as_str()));
+    let loader_compatible = project_type != "mod"
+        || version["loaders"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|loader| loader.as_str() == Some(loader_name(instance.loader)));
+    if game_compatible && loader_compatible {
+        Ok(())
+    } else {
+        Err(AppError::new(format!(
+            "La version sélectionnée de {project_title} n’est pas compatible avec cette instance"
+        )))
+    }
+}
+
+async fn project_version(
+    state: &crate::AppState,
+    instance: &crate::models::Instance,
+    project_id: &str,
+    requested_version: Option<&str>,
+) -> Result<(Value, Value)> {
+    let project_url = format!("https://api.modrinth.com/v2/project/{project_id}");
+    let project_request = get_json(&state.client, &project_url);
+    if let Some(version_id) = requested_version {
+        let version_url = format!("https://api.modrinth.com/v2/version/{version_id}");
+        let version_request = get_json(&state.client, &version_url);
+        let (project, version): (Value, Value) =
+            tokio::try_join!(project_request, version_request)?;
+        let project_type = project["project_type"].as_str().unwrap_or("mod");
+        if project_type == "modpack" {
+            return Err(AppError::new(
+                "Les modpacks s’installent depuis leur page avec le bouton dédié",
+            ));
+        }
+        ensure_version_compatible(
+            &version,
+            instance,
+            project_type,
+            project["title"].as_str().unwrap_or(project_id),
+        )?;
+        return Ok((project, version));
+    }
+    let project: Value = project_request.await?;
+    let project_type = project["project_type"].as_str().unwrap_or("mod");
+    if project_type == "modpack" {
+        return Err(AppError::new(
+            "Les modpacks s’installent depuis leur page avec le bouton dédié",
+        ));
+    }
+    let title = project["title"].as_str().unwrap_or(project_id);
+    let versions = compatible_versions(state, instance, project_id, project_type).await?;
+    let version = select_version(versions, None, title)?;
+    Ok((project, version))
+}
+
 #[tauri::command]
 pub async fn list_modrinth_versions(
     project_id: String,
@@ -219,46 +358,93 @@ pub async fn install_modrinth_project(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ContentEntry> {
     let mut visited = std::collections::HashSet::new();
-    install_project_tree(
+    let mut jobs = Vec::new();
+    let existing = resolve_project_tree(
         &state,
-        &app,
         &instance_id,
         &project_id,
         version_id.as_deref(),
         &mut visited,
+        &mut jobs,
     )
-    .await?
-    .ok_or_else(|| AppError::new("Ce contenu est déjà installé"))
+    .await?;
+    if jobs.is_empty() {
+        return existing.ok_or_else(|| AppError::new("Ce contenu est déjà installé"));
+    }
+
+    let total = jobs.len();
+    let concurrency = state.store.settings()?.download_concurrency.clamp(1, 32);
+    let completed = std::sync::Arc::new(AtomicUsize::new(0));
+    let _ = app.emit(
+        "download-progress",
+        ProgressEvent {
+            operation: "content",
+            label: "Installation des contenus",
+            current: 0,
+            total: total as u64,
+        },
+    );
+    let state_ref = &state;
+    let instance_id_ref = instance_id.as_str();
+    let entries = stream::iter(jobs.into_iter().map(|job| {
+        let app = app.clone();
+        let completed = completed.clone();
+        async move {
+            let entry = install_version(
+                state_ref,
+                instance_id_ref,
+                &job.project,
+                &job.version,
+                &job.project_type,
+            )
+            .await?;
+            let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
+            let _ = app.emit(
+                "download-progress",
+                ProgressEvent {
+                    operation: "content",
+                    label: "Installation des contenus",
+                    current: current as u64,
+                    total: total as u64,
+                },
+            );
+            Ok::<ContentEntry, AppError>(entry)
+        }
+    }))
+    .buffer_unordered(concurrency)
+    .try_collect::<Vec<_>>()
+    .await?;
+    entries
+        .into_iter()
+        .find(|entry| entry.project_id.as_deref() == Some(project_id.as_str()))
+        .or(existing)
+        .ok_or_else(|| AppError::new("Contenu installé mais introuvable"))
 }
 
-fn install_project_tree<'a>(
+fn resolve_project_tree<'a>(
     state: &'a crate::AppState,
-    app: &'a AppHandle,
     instance_id: &'a str,
     project_id: &'a str,
     version_id: Option<&'a str>,
     visited: &'a mut std::collections::HashSet<String>,
+    jobs: &'a mut Vec<InstallJob>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Option<ContentEntry>>> + Send + 'a>>
 {
     Box::pin(async move {
         if !visited.insert(project_id.to_string()) {
             return Ok(None);
         }
-        let instance = state.store.instance(instance_id)?;
-        let project: Value = get_json(
-            &state.client,
-            &format!("https://api.modrinth.com/v2/project/{project_id}"),
-        )
-        .await?;
-        let project_type = project["project_type"].as_str().unwrap_or("mod");
-        if project_type == "modpack" {
-            return Err(AppError::new(
-                "Les modpacks s’installent depuis leur page avec le bouton dédié",
-            ));
+        if let Some(installed) =
+            installed_content(&state.store.game_dir(instance_id), project_id, version_id)
+        {
+            return Ok(Some(installed));
         }
-        let versions = compatible_versions(state, &instance, project_id, project_type).await?;
-        let title = project["title"].as_str().unwrap_or(project_id);
-        let version = select_version(versions, version_id, title)?;
+        let instance = state.store.instance(instance_id)?;
+        let (project, version) = project_version(state, &instance, project_id, version_id).await?;
+        let project_type = project["project_type"]
+            .as_str()
+            .unwrap_or("mod")
+            .to_string();
         for dependency in version["dependencies"]
             .as_array()
             .into_iter()
@@ -268,19 +454,22 @@ fn install_project_tree<'a>(
             let Some(dependency_id) = dependency["project_id"].as_str() else {
                 continue;
             };
-            install_project_tree(
+            resolve_project_tree(
                 state,
-                app,
                 instance_id,
                 dependency_id,
                 dependency["version_id"].as_str(),
                 visited,
+                jobs,
             )
             .await?;
         }
-        install_version(state, app, instance_id, &project, &version, project_type)
-            .await
-            .map(Some)
+        jobs.push(InstallJob {
+            project,
+            version,
+            project_type,
+        });
+        Ok(None)
     })
 }
 
@@ -316,7 +505,6 @@ fn remove_previous_versions(directory: &std::path::Path, project_id: &str, keep_
 
 async fn install_version(
     state: &crate::AppState,
-    app: &AppHandle,
     instance_id: &str,
     project: &Value,
     version: &Value,
@@ -361,7 +549,7 @@ async fn install_version(
         url,
         &destination,
         Some(&checksum),
-        Some(app),
+        None,
         "content",
         project["title"].as_str().unwrap_or(file_name),
     )
@@ -394,7 +582,7 @@ async fn install_version(
 
 #[cfg(test)]
 mod tests {
-    use super::select_version;
+    use super::{installed_content, select_version, ContentMetadata};
     use serde_json::json;
 
     #[test]
@@ -416,5 +604,50 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("n’est pas compatible"));
+    }
+
+    #[test]
+    fn recognizes_installed_and_disabled_versions() {
+        let directory = tempfile::tempdir().unwrap();
+        let mods = directory.path().join("mods");
+        std::fs::create_dir_all(&mods).unwrap();
+        std::fs::write(mods.join("sodium.jar.disabled"), b"mod").unwrap();
+        let metadata = ContentMetadata {
+            project_id: "sodium".into(),
+            project_title: "Sodium".into(),
+            version_id: "new".into(),
+            icon_url: None,
+        };
+        std::fs::write(
+            mods.join(".sodium.jar.xal.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let installed = installed_content(directory.path(), "sodium", Some("new")).unwrap();
+        assert_eq!(installed.file_name, "sodium.jar.disabled");
+        assert!(!installed.enabled);
+        assert!(installed_content(directory.path(), "sodium", Some("old")).is_none());
+    }
+
+    #[test]
+    fn finds_content_when_another_content_folder_is_missing() {
+        let directory = tempfile::tempdir().unwrap();
+        let packs = directory.path().join("resourcepacks");
+        std::fs::create_dir_all(&packs).unwrap();
+        std::fs::write(packs.join("pack.zip"), b"pack").unwrap();
+        let metadata = ContentMetadata {
+            project_id: "pack".into(),
+            project_title: "Pack".into(),
+            version_id: "v1".into(),
+            icon_url: None,
+        };
+        std::fs::write(
+            packs.join(".pack.zip.xal.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        assert!(installed_content(directory.path(), "pack", Some("v1")).is_some());
     }
 }

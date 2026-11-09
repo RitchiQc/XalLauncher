@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBrowser } from "@/components/ProjectBrowser";
-import type { Instance, ModrinthVersion, ProjectHit } from "@/types";
+import type { ContentEntry, Instance, ModrinthVersion, ProjectHit } from "@/types";
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
@@ -40,6 +40,10 @@ const versions: ModrinthVersion[] = [
   { id: "new", name: "Sodium 0.7", versionNumber: "0.7.0", versionType: "release", datePublished: "2025-02-01T00:00:00Z", gameVersions: ["1.21.1"], loaders: ["fabric"] },
   { id: "old", name: "Sodium 0.6", versionNumber: "0.6.13", versionType: "release", datePublished: "2025-01-01T00:00:00Z", gameVersions: ["1.21.1"], loaders: ["fabric"] },
 ];
+const installed: ContentEntry = {
+  fileName: "sodium.jar", kind: "mod", enabled: true, size: 100, modifiedAt: "2025-02-01T00:00:00Z",
+  projectId: "sodium", projectTitle: "Sodium", versionId: "new",
+};
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -68,5 +72,21 @@ describe("ProjectBrowser", () => {
     expect(mocks.projectVersions).toHaveBeenCalledWith("sodium", "instance-1");
     expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("marque la version installée et permet seulement son remplacement par une autre", async () => {
+    render(<ProjectBrowser kind="mod" instance={instance} installedContent={[installed]} onContentInstalled={mocks.onContentInstalled} />);
+
+    expect(await screen.findByText("Installé")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Versions" }));
+    const select = await screen.findByRole("combobox", { name: "Version du contenu" });
+    expect(select).toHaveValue("new");
+    expect(screen.getByRole("option", { name: "0.7.0 · release · installée" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Version installée" })).toBeDisabled();
+
+    fireEvent.change(select, { target: { value: "old" } });
+    fireEvent.click(screen.getByRole("button", { name: "Remplacer par cette version" }));
+    await waitFor(() => expect(mocks.installProject).toHaveBeenCalledWith("sodium", "instance-1", "old"));
+    expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
   });
 });
