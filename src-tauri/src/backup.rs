@@ -28,7 +28,7 @@ fn add_directory(zip: &mut zip::ZipWriter<fs::File>, source: &Path, prefix: &Pat
     Ok(())
 }
 
-fn create_zip(store: &Store, instance_id: &str, name: String) -> Result<BackupEntry> {
+pub(crate) fn create_zip(store: &Store, instance_id: &str, name: String) -> Result<BackupEntry> {
     let instance = store.instance(instance_id)?;
     let id = uuid::Uuid::new_v4().to_string();
     let directory = store.backups_dir().join(instance_id);

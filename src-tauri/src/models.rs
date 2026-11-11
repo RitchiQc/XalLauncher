@@ -4,6 +4,49 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ModuleState {
+    #[serde(default)]
+    pub performance: bool,
+    #[serde(default)]
+    pub performance_jvm: bool,
+    #[serde(default)]
+    pub performance_options: bool,
+    #[serde(default)]
+    pub performance_priority: bool,
+    #[serde(default)]
+    pub performance_ecoqos: bool,
+    #[serde(default)]
+    pub performance_affinity: bool,
+    #[serde(default)]
+    pub auto_backup: bool,
+    #[serde(default = "default_true")]
+    pub branding: bool,
+    #[serde(default = "default_true")]
+    pub crash_diagnosis: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for ModuleState {
+    fn default() -> Self {
+        Self {
+            performance: false,
+            performance_jvm: false,
+            performance_options: false,
+            performance_priority: false,
+            performance_ecoqos: false,
+            performance_affinity: false,
+            auto_backup: false,
+            branding: true,
+            crash_diagnosis: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Instance {
     pub id: String,
     pub name: String,
@@ -24,6 +67,8 @@ pub struct Instance {
     pub jvm_arguments: String,
     #[serde(default)]
     pub server_address: Option<String>,
+    #[serde(default)]
+    pub modules: ModuleState,
     pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub last_played_at: Option<DateTime<Utc>>,
@@ -59,6 +104,8 @@ pub struct InstanceInput {
     pub jvm_arguments: String,
     #[serde(default)]
     pub server_address: Option<String>,
+    #[serde(default)]
+    pub modules: ModuleState,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -267,4 +314,27 @@ pub struct DeviceCodeEvent {
     pub verification_uri: String,
     pub expires_in: u64,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrashCause {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrashReport {
+    pub instance_id: String,
+    pub summary: String,
+    pub severity: String,
+    pub causes: Vec<CrashCause>,
+    pub mods: Vec<String>,
+    #[serde(default)]
+    pub crash_file: Option<String>,
+    pub log_excerpt: String,
+    pub generated_at: DateTime<Utc>,
 }

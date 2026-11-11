@@ -93,6 +93,7 @@ async fn import_pack(
         java_path: None,
         jvm_arguments: String::new(),
         server_address: None,
+        modules: Default::default(),
         created_at: Utc::now(),
         last_played_at: None,
         total_play_seconds: 0,

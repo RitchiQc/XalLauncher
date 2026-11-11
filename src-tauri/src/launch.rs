@@ -554,6 +554,27 @@ pub async fn launch_instance(
             .map_err(|error| AppError::new(format!("Arguments JVM invalides : {error}")))?;
         jvm.extend(custom);
     }
+    if instance.modules.branding {
+        for (key, value) in [
+            ("minecraft.launcher.brand", "XalLauncher"),
+            ("minecraft.launcher.version", env!("CARGO_PKG_VERSION")),
+        ] {
+            let prefix = format!("-D{key}=");
+            if !jvm.iter().any(|argument| argument.starts_with(&prefix)) {
+                jvm.push(format!("{prefix}{value}"));
+            }
+        }
+    }
+    let performance_cores = if instance.modules.performance
+        && instance.modules.performance_affinity
+    {
+        crate::modules::performance_core_count()
+    } else {
+        None
+    };
+    if instance.modules.performance && instance.modules.performance_jvm {
+        crate::modules::apply_performance_jvm(&mut jvm, performance_cores);
+    }
     if !jvm
         .iter()
         .any(|argument| argument == "-cp" || argument == "-classpath")
@@ -631,11 +652,33 @@ pub async fn launch_instance(
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
+    emit(&app, "Application des modules", 0, 1);
+    crate::modules::prepare(&state.store, &instance)?;
+    if instance.modules.branding {
+        crate::branding::ensure(&state.store, &instance)?;
+    } else {
+        crate::branding::disable(&state.store, &instance)?;
+    }
+    if instance.modules.auto_backup {
+        emit(&app, "Sauvegarde des mondes", 0, 1);
+        let store = state.store.clone();
+        let backup_instance = id.clone();
+        let backup_name = format!(
+            "Sauvegarde avant lancement du {}",
+            Utc::now().format("%d/%m/%Y %H:%M")
+        );
+        tokio::task::spawn_blocking(move || {
+            crate::backup::create_zip(&store, &backup_instance, backup_name)
+        })
+        .await
+        .map_err(|error| AppError::new(error.to_string()))??;
+    }
     emit(&app, "Démarrage de Minecraft", 1, 1);
     let mut child = command
         .spawn()
         .context("Impossible de démarrer le processus Minecraft")?;
     let pid = child.id();
+    crate::modules::tune_process(pid, &instance.modules, performance_cores);
     let started_at = Utc::now();
     let stdout = child
         .stdout

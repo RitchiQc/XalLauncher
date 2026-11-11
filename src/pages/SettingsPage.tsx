@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Download, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sun } from "lucide-react";
+import { Check, Download, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
 import { Button, PageHeader, ProgressBar, Toggle } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
 import { findUpdate } from "@/lib/updates";
@@ -47,7 +47,7 @@ export function SettingsPage() {
 
   return <div className="page settings-page"><PageHeader eyebrow="Personnalisation" title="Paramètres" description="Réglez XalLauncher selon votre machine et vos préférences." actions={<Button onClick={() => void save()} loading={saving} disabled={!dirty}><Save size={17} />Enregistrer</Button>} />
     <section className="settings-section panel"><header><Palette /><div><h2>Apparence</h2><p>Un environnement qui vous ressemble, sans nuire à la lisibilité.</p></div></header><div className="settings-body">
-      <div className="setting-row"><span><strong>Thème</strong><small>Choisissez l’ambiance de l’interface.</small></span><div className="segmented"><button className={form.theme === "dark" ? "active" : ""} onClick={() => patch("theme", "dark")}><Moon size={15} />Sombre</button><button className={form.theme === "light" ? "active" : ""} onClick={() => patch("theme", "light")}><Sun size={15} />Clair</button></div></div>
+      <div className="setting-row"><span><strong>Thème</strong><small>Choisissez l’ambiance de l’interface.</small></span><div className="segmented"><button className={form.theme === "dark" ? "active" : ""} onClick={() => patch("theme", "dark")}><Moon size={15} />Sombre</button><button className={form.theme === "light" ? "active" : ""} onClick={() => patch("theme", "light")}><Sun size={15} />Clair</button><button className={form.theme === "space" ? "active" : ""} onClick={() => patch("theme", "space")}><Sparkles size={15} />Espace</button></div></div>
       <div className="setting-row"><span><strong>Couleur d’accent</strong><small>Boutons, sélections et indicateurs de progression.</small></span><div className="color-picker">{accents.map((color) => <button key={color} className={form.accent === color ? "selected" : ""} style={{ background: color }} onClick={() => patch("accent", color)}>{form.accent === color ? <Check size={15} /> : null}</button>)}</div></div>
       <Toggle checked={form.reducedMotion} onChange={(value) => patch("reducedMotion", value)} label="Réduire les animations et transitions" />
     </div></section>

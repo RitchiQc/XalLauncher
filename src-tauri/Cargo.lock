@@ -5606,6 +5606,7 @@ dependencies = [
  "directories",
  "futures-util",
  "hex",
+ "image",
  "keyring",
  "regex",
  "reqwest 0.12.28",

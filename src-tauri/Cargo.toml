@@ -40,6 +40,7 @@ semver = { version = "1", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [profile.release]
 lto = "thin"

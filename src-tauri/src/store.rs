@@ -138,7 +138,7 @@ pub fn update_settings(
             "Le nombre de téléchargements simultanés doit être entre 1 et 32",
         ));
     }
-    if !matches!(settings.theme.as_str(), "dark" | "light")
+    if !matches!(settings.theme.as_str(), "dark" | "light" | "space")
         || !matches!(settings.language.as_str(), "fr" | "en")
     {
         return Err(AppError::new("Paramètres d’apparence invalides"));

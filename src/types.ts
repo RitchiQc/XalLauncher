@@ -1,5 +1,49 @@
 export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge";
 export type ContentKind = "mod" | "resourcepack" | "shader" | "world";
+export type Theme = "dark" | "light" | "space";
+export type SearchIndex = "relevance" | "downloads" | "follows" | "newest" | "updated";
+
+export interface ModuleState {
+  performance: boolean;
+  performanceJvm: boolean;
+  performanceOptions: boolean;
+  performancePriority: boolean;
+  performanceEcoqos: boolean;
+  performanceAffinity: boolean;
+  autoBackup: boolean;
+  branding: boolean;
+  crashDiagnosis: boolean;
+}
+
+export const defaultModules: ModuleState = {
+  performance: false,
+  performanceJvm: false,
+  performanceOptions: false,
+  performancePriority: false,
+  performanceEcoqos: false,
+  performanceAffinity: false,
+  autoBackup: false,
+  branding: true,
+  crashDiagnosis: true,
+};
+
+export interface CrashCause {
+  id: string;
+  title: string;
+  detail: string;
+  action: string;
+}
+
+export interface CrashReport {
+  instanceId: string;
+  summary: string;
+  severity: "warning" | "error" | "fatal";
+  causes: CrashCause[];
+  mods: string[];
+  crashFile?: string;
+  logExcerpt: string;
+  generatedAt: string;
+}
 
 export interface MinecraftVersion {
   id: string;
@@ -28,6 +72,7 @@ export interface Instance {
   javaPath?: string;
   jvmArguments: string;
   serverAddress?: string;
+  modules?: ModuleState;
   createdAt: string;
   lastPlayedAt?: string;
   totalPlaySeconds: number;
@@ -48,6 +93,7 @@ export interface InstanceInput {
   javaPath?: string;
   jvmArguments: string;
   serverAddress?: string;
+  modules?: ModuleState;
 }
 
 export interface Cape {
@@ -68,7 +114,7 @@ export interface Account {
 
 export interface AppSettings {
   language: "fr" | "en";
-  theme: "dark" | "light";
+  theme: Theme;
   accent: string;
   reducedMotion: boolean;
   downloadConcurrency: number;

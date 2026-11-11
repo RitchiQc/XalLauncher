@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AppSettings, BackupEntry, ContentEntry, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, ServerEntry, ServerStatus } from "@/types";
+import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus } from "@/types";
 
 export const api = {
   settings: () => invoke<AppSettings>("get_settings"),
@@ -21,7 +21,8 @@ export const api = {
   stop: (id: string) => invoke<void>("stop_game", { id }),
   running: () => invoke<string[]>("running_games"),
   log: (id: string) => invoke<string>("read_instance_log", { id }),
-  search: (query: string, projectType: string, versionId?: string, loader?: Loader, offset = 0) => invoke<ProjectHit[]>("search_modrinth", { query, projectType, versionId, loader, offset }),
+  search: (query: string, projectType: string, versionId?: string, loader?: Loader, offset = 0, index: SearchIndex = "relevance") => invoke<ProjectHit[]>("search_modrinth", { query, projectType, versionId, loader, offset, index }),
+  diagnoseCrash: (instanceId: string) => invoke<CrashReport>("diagnose_crash", { instanceId }),
   projectVersions: (projectId: string, instanceId: string) => invoke<ModrinthVersion[]>("list_modrinth_versions", { projectId, instanceId }),
   installProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_modrinth_project", { projectId, instanceId, versionId }),
   installModpack: (projectId: string) => invoke<Instance>("install_modrinth_modpack", { projectId }),

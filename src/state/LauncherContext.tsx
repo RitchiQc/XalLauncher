@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage } from "@/lib/api";
 import { findUpdate } from "@/lib/updates";
-import type { Account, AppSettings, DeviceCodeEvent, GameLog, Instance, ProgressEvent, ServerEntry } from "@/types";
+import type { Account, AppSettings, CrashReport, DeviceCodeEvent, GameLog, Instance, ProgressEvent, ServerEntry } from "@/types";
 
 const defaultSettings: AppSettings = {
   language: "fr", theme: "dark", accent: "#8b5cf6", reducedMotion: false,
@@ -25,6 +25,8 @@ type LauncherContextValue = {
   deviceCode?: DeviceCodeEvent;
   logs: GameLog[];
   toasts: Toast[];
+  crashReports: Record<string, CrashReport>;
+  diagnoseCrash: (instanceId: string) => Promise<void>;
   setActiveAccountId: (id: string) => void;
   setActiveInstanceId: (id: string) => void;
   setSettings: (settings: AppSettings) => void;
@@ -54,7 +56,10 @@ export function LauncherProvider({ children }: { children: ReactNode }) {
   const [deviceCode, setDeviceCode] = useState<DeviceCodeEvent>();
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [crashReports, setCrashReports] = useState<Record<string, CrashReport>>({});
   const updateChecked = useRef(false);
+  const instancesRef = useRef<Instance[]>([]);
+  const stoppingRef = useRef(new Set<string>());
 
   const dismissToast = useCallback((id: number) => setToasts((items) => items.filter((item) => item.id !== id)), []);
   const notify = useCallback((message: string, kind: Toast["kind"] = "info") => {
@@ -66,6 +71,14 @@ export function LauncherProvider({ children }: { children: ReactNode }) {
   const refreshAccounts = useCallback(async () => setAccounts(await api.accounts()), []);
   const refreshInstances = useCallback(async () => setInstances(await api.instances()), []);
   const refreshServers = useCallback(async () => setServers(await api.servers()), []);
+  const diagnoseCrash = useCallback(async (instanceId: string) => {
+    try {
+      const report = await api.diagnoseCrash(instanceId);
+      setCrashReports((items) => ({ ...items, [instanceId]: report }));
+    } catch (error) {
+      notify(errorMessage(error), "error");
+    }
+  }, [notify]);
 
   useEffect(() => {
     Promise.all([api.settings(), api.accounts(), api.instances(), api.servers(), api.running()])
@@ -89,19 +102,32 @@ export function LauncherProvider({ children }: { children: ReactNode }) {
       }),
       listen<DeviceCodeEvent>("auth-device-code", (event) => setDeviceCode(event.payload)),
       listen<GameLog>("game-log", (event) => setLogs((items) => [...items.slice(-1499), event.payload])),
-      listen<{ instanceId: string }>("game-exit", (event) => {
+      listen<{ instanceId: string; code?: number | null }>("game-exit", (event) => {
         setRunning((items) => { const next = new Set(items); next.delete(event.payload.instanceId); return next; });
         void refreshInstances();
+        const stoppedByUser = stoppingRef.current.delete(event.payload.instanceId);
+        const target = instancesRef.current.find((instance) => instance.id === event.payload.instanceId);
+        if (!stoppedByUser && typeof event.payload.code === "number" && event.payload.code !== 0 && target?.modules?.crashDiagnosis !== false) {
+          void diagnoseCrash(event.payload.instanceId).then(() => {
+            notify("Minecraft a crashé — diagnostic disponible dans Journaux", "error");
+          });
+        }
       }),
     ];
     return () => { listeners.forEach((listener) => void listener.then((unlisten) => unlisten())); };
-  }, [refreshInstances]);
+  }, [refreshInstances, diagnoseCrash, notify]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.setProperty("--accent", settings.accent);
     document.documentElement.classList.toggle("reduce-motion", settings.reducedMotion);
   }, [settings]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("game-running", running.size > 0);
+  }, [running]);
+
+  useEffect(() => { instancesRef.current = instances; }, [instances]);
 
   useEffect(() => {
     if (!ready || !settings.autoUpdate || updateChecked.current) return;
@@ -130,17 +156,19 @@ export function LauncherProvider({ children }: { children: ReactNode }) {
     } catch (error) { notify(errorMessage(error), "error"); return false; }
   }, [activeAccountId, notify]);
   const stopGame = useCallback(async (instanceId: string) => {
-    try { await api.stop(instanceId); } catch (error) { notify(errorMessage(error), "error"); }
+    stoppingRef.current.add(instanceId);
+    try { await api.stop(instanceId); }
+    catch (error) { stoppingRef.current.delete(instanceId); notify(errorMessage(error), "error"); }
   }, [notify]);
 
   const value = useMemo<LauncherContextValue>(() => ({
     ready, settings, accounts, instances, servers,
     activeAccount: accounts.find((account) => account.id === activeAccountId),
     activeInstance: instances.find((instance) => instance.id === activeInstanceId),
-    activeAccountId, activeInstanceId, running, progress, deviceCode, logs, toasts,
+    activeAccountId, activeInstanceId, running, progress, deviceCode, logs, toasts, crashReports, diagnoseCrash,
     setActiveAccountId, setActiveInstanceId, setSettings, refreshAccounts, refreshInstances, refreshServers, startGame, stopGame,
     perform, notify, dismissToast, clearDeviceCode: () => setDeviceCode(undefined),
-  }), [ready, settings, accounts, instances, servers, activeAccountId, activeInstanceId, running, progress, deviceCode, logs, toasts,
+  }), [ready, settings, accounts, instances, servers, activeAccountId, activeInstanceId, running, progress, deviceCode, logs, toasts, crashReports, diagnoseCrash,
     setActiveAccountId, setActiveInstanceId, refreshAccounts, refreshInstances, refreshServers, startGame, stopGame, perform, notify, dismissToast]);
 
   return <LauncherContext.Provider value={value}>{children}</LauncherContext.Provider>;

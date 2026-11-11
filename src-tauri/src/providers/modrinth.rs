@@ -37,8 +37,16 @@ pub async fn search_modrinth(
     version_id: Option<String>,
     loader: Option<Loader>,
     offset: Option<u32>,
+    index: Option<String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<ProjectHit>> {
+    let index = match index.as_deref() {
+        Some("downloads") => "downloads",
+        Some("follows") => "follows",
+        Some("newest") => "newest",
+        Some("updated") => "updated",
+        _ => "relevance",
+    };
     let mut facets = vec![json!([format!("project_type:{project_type}")])];
     if let Some(version) = version_id.filter(|value| !value.is_empty()) {
         facets.push(json!([format!("versions:{version}")]));
@@ -55,7 +63,7 @@ pub async fn search_modrinth(
             ("query", query),
             ("limit", "24".into()),
             ("offset", offset.unwrap_or(0).to_string()),
-            ("index", "relevance".into()),
+            ("index", index.into()),
             ("facets", serde_json::to_string(&facets)?),
         ])
         .send()

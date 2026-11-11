@@ -3,6 +3,7 @@ import { LoaderCircle } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { loaderLabels } from "@/lib/format";
 import { useLauncher } from "@/state/LauncherContext";
+import { defaultModules } from "@/types";
 import type { Instance, InstanceInput, Loader, LoaderVersion, MinecraftVersion } from "@/types";
 import { Button, Modal, Toggle } from "./UI";
 
@@ -16,9 +17,11 @@ function inputFrom(instance?: Instance): InstanceInput {
     resolutionWidth: instance.resolutionWidth, resolutionHeight: instance.resolutionHeight,
     fullscreen: instance.fullscreen, closeOnLaunch: instance.closeOnLaunch, javaPath: instance.javaPath,
     jvmArguments: instance.jvmArguments, serverAddress: instance.serverAddress,
+    modules: instance.modules ?? defaultModules,
   } : {
     name: "", versionId: "", loader: "vanilla", color: colors[0], memoryMin: 512, memoryMax: 4096,
     resolutionWidth: 1280, resolutionHeight: 720, fullscreen: false, closeOnLaunch: false, jvmArguments: "",
+    modules: defaultModules,
   };
 }
 

@@ -13,6 +13,8 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Plusieurs comptes, changement de compte actif et renouvellement de session.
 - Jetons conservés dans le **Coffre d’identification Windows** (backend `windows-native` de `keyring`, secret découpé en segments pour respecter la limite de 2 560 octets par entrée), jamais dans `settings.json`.
 - Profil, skin avec aperçu 3D, liste des capes possédées, activation et masquage d’une cape officielle. Les textures officielles sont forcées en HTTPS pour que l’aperçu 3D et les capes se chargent réellement.
+- Têtes de joueur dessinées directement depuis la texture officielle du skin (visage + chapeau), sans dépendre de Crafatar ou mc-heads.
+- Vignettes de capes découpées sur le panneau arrière réel de la texture 64×32, au lieu d’afficher la planche complète.
 
 ### Instances et lancement
 
@@ -31,6 +33,8 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 
 - Recherche Modrinth de mods, resource packs et shaders directement depuis chaque instance.
 - Recherche de modpacks depuis la Bibliothèque, avec création automatique d’une nouvelle instance isolée.
+- Scroll infini dans l’explorateur Modrinth (24 résultats par page, chargement automatique) et tri par pertinence, téléchargements, suivis, nouveautés ou dernière mise à jour.
+- L’explorateur reste ouvert sur la page « Ajouter » après une installation, pour enchaîner plusieurs contenus sans revenir à la liste.
 - Filtrage par version de Minecraft et modloader, avec choix de la publication exacte à installer, y compris une version plus ancienne.
 - Installation des dépendances obligatoires, respect de leurs éventuelles versions imposées et remplacement des anciennes versions d’un projet.
 - Identification des contenus et versions déjà installés dans l’explorateur, sans téléchargement redondant.
@@ -41,11 +45,25 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Liste des mondes et galerie des captures d’écran.
 - Sauvegardes ZIP des mondes, restauration sécurisée et sauvegarde automatique avant restauration.
 
+### Modules par instance
+
+Chaque instance possède un onglet **Modules**. Les réglages sont appliqués au lancement et ne modifient jamais l’installation d’un modloader.
+
+- **Performance** (sans mods, désactivé par défaut) :
+  - arguments JVM Aikar (G1GC, `Xms = Xmx`, `AlwaysPreTouch`, `PerfDisableSharedMem`…) ;
+  - presets graphiques dans `options.txt` (distance de rendu/simulation, particules, ombres, nuages, V-Sync, FPS max…), avec sauvegarde puis restauration automatique ;
+  - priorité Windows élevée et désactivation d’EcoQoS ;
+  - affinité sur les cœurs performance des CPU hybrides, avec `ActiveProcessorCount` aligné.
+- **Branding XalLauncher** (activé par défaut) : resource pack généré automatiquement avec panorama nébuleuse, splashs, icône de pack, titre de fenêtre XalLauncher. Désactivable par instance ; le pack est alors retiré des options du jeu.
+- **Diagnostic de crash** (activé par défaut) : après un arrêt anormal, analyse du journal et des rapports de crash, détection des causes fréquentes (mémoire, Java, dépendances, Mixin, graphismes, installation corrompue, port) et actions recommandées.
+- **Sauvegarde automatique** : ZIP des mondes avant chaque lancement.
+- **Mode jeu** : les animations lourdes du launcher (nébuleuse, étoiles, flous) sont coupées pendant une partie.
+
 ### Multijoueur et application
 
 - Serveurs favoris avec statut réel, MOTD, version, joueurs et latence.
 - Association d’un serveur à une instance et lancement rapide.
-- Thèmes sombre/clair, accents, animations réductibles et centre de progression.
+- Thèmes sombre, clair et **Espace** (nébuleuses animées et étoiles scintillantes), accents, animations réductibles et centre de progression.
 - Recherche manuelle ou automatique de mises à jour signées via GitHub Releases (le dépôt ou l’hébergement du manifeste doit être accessible publiquement).
 - Interface actuellement en français.
 
@@ -145,6 +163,10 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src-tauri/src/modpacks.rs` : archives `.mrpack`.
 - `src-tauri/src/backup.rs` : sauvegardes des mondes.
 - `src-tauri/src/servers.rs` : protocole Server List Ping.
+- `src-tauri/src/modules.rs` : module Performance (JVM, `options.txt`, priorité/EcoQoS, affinité P-cores).
+- `src-tauri/src/branding.rs` : génération du resource pack XalLauncher.
+- `src-tauri/src/options.rs` : lecture/écriture sûre d’`options.txt`.
+- `src-tauri/src/crash.rs` : diagnostic des plantages.
 
 ## Limites actuelles
 
@@ -154,6 +176,9 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - Le canal de mise à jour lit `latest.json` sans authentification : le dépôt (ou l’hébergement du manifeste) doit être public, sinon la vérification échoue.
 - Essential n’a pas d’intégration dédiée ; il reste installable comme un mod Modrinth ordinaire.
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.
+- Le module Performance n’installe aucun mod : il agit uniquement sur la JVM, `options.txt` et le processus Windows.
+- Le Branding est un resource pack (menu, splashs, icône, titre) ; l’écran de chargement et l’icône de fenêtre 100 % personnalisés nécessiteraient un mod compagnon, non inclus.
+- Discord Rich Presence et la mise à jour automatique des mods ne sont pas implémentés.
 - Les tests de connexion, de possession du jeu et de lancement authentifié exigent un compte Microsoft réel ; ils ne sont pas simulés en CI.
 
 ## Mentions

@@ -48,6 +48,15 @@ const installed: ContentEntry = {
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  vi.stubGlobal("IntersectionObserver", class {
+    private callback: IntersectionObserverCallback;
+    constructor(callback: IntersectionObserverCallback) { this.callback = callback; }
+    observe() { this.callback([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+    unobserve() { return undefined; }
+    disconnect() { return undefined; }
+    takeRecords() { return []; }
+  });
   mocks.search.mockResolvedValue([project]);
   mocks.projectVersions.mockResolvedValue(versions);
   mocks.installProject.mockResolvedValue({ fileName: "sodium.jar" });
@@ -88,5 +97,24 @@ describe("ProjectBrowser", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remplacer par cette version" }));
     await waitFor(() => expect(mocks.installProject).toHaveBeenCalledWith("sodium", "instance-1", "old"));
     expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
+  });
+
+  it("charge la page suivante avec le bon décalage", async () => {
+    const firstPage = Array.from({ length: 24 }, (_, index) => ({
+      ...project, projectId: `mod-${index}`, slug: `mod-${index}`, title: `Mod ${index}`,
+    }));
+    mocks.search.mockResolvedValueOnce(firstPage).mockResolvedValueOnce([project]);
+
+    render(<ProjectBrowser kind="mod" instance={instance} onContentInstalled={mocks.onContentInstalled} />);
+    expect(await screen.findByText("Mod 0")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.search).toHaveBeenLastCalledWith("", "mod", "1.21.1", "fabric", 24, "relevance"));
+    expect(await screen.findByText("Sodium")).toBeInTheDocument();
+  });
+
+  it("trie les résultats côté Modrinth", async () => {
+    render(<ProjectBrowser kind="mod" instance={instance} onContentInstalled={mocks.onContentInstalled} />);
+    await screen.findByText("Sodium");
+    fireEvent.change(screen.getByRole("combobox", { name: "Trier les résultats" }), { target: { value: "downloads" } });
+    await waitFor(() => expect(mocks.search).toHaveBeenLastCalledWith("", "mod", "1.21.1", "fabric", 0, "downloads"));
   });
 });

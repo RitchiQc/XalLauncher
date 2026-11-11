@@ -1,6 +1,8 @@
 mod auth;
 mod backup;
+mod branding;
 mod content;
+mod crash;
 mod download;
 mod error;
 mod http;
@@ -9,7 +11,9 @@ mod java;
 mod launch;
 mod loaders;
 mod models;
+mod modules;
 mod modpacks;
+mod options;
 mod providers;
 mod servers;
 mod store;
@@ -81,6 +85,7 @@ pub fn run() {
             backup::create_backup,
             backup::restore_backup,
             backup::delete_backup,
+            crash::diagnose_crash,
             modpacks::import_modrinth_pack,
             modpacks::install_modrinth_modpack,
         ])
