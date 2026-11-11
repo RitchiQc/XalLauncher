@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronDown, CircleStop, Clock3, CloudDownload, Library, Play, Plus, ShieldCheck, Sparkles, UserRound } from "lucide-react";
 import { InstanceArtwork } from "@/components/InstanceArtwork";
 import { Button, EmptyState, ProgressBar } from "@/components/UI";
-import { avatarUrl, formatDuration } from "@/lib/format";
+import { avatarFallback, avatarUrl, formatDuration, handleAvatarError } from "@/lib/format";
 import { useLauncher } from "@/state/LauncherContext";
 
 export function HomePage() {
@@ -26,7 +26,7 @@ export function HomePage() {
         <div className="instance-select-wrap"><select aria-label="Instance active" value={activeInstanceId} onChange={(event) => setActiveInstanceId(event.target.value)}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.name}</option>)}</select><ChevronDown size={16} /></div>
         {isRunning ? <Button variant="danger" className="play-button" onClick={() => void stopGame(activeInstance.id)}><CircleStop size={22} />Arrêter le jeu</Button> : <Button className="play-button" onClick={() => void launch()} loading={launching} disabled={!activeAccount}><Play size={22} fill="currentColor" />Jouer</Button>}
         {progress?.operation === "launch" ? <ProgressBar value={progress.total ? progress.current / progress.total * 100 : 0} label={progress.label} /> : null}
-        {!activeAccount ? <button className="account-warning" onClick={() => navigate("/accounts")}><UserRound size={16} />Connectez un compte Microsoft pour jouer<ArrowRight size={15} /></button> : <span className="playing-as"><img src={avatarUrl(activeAccount.id, 32)} alt="" />Vous jouez avec <strong>{activeAccount.name}</strong><ShieldCheck size={15} /></span>}
+        {!activeAccount ? <button className="account-warning" onClick={() => navigate("/accounts")}><UserRound size={16} />Connectez un compte Microsoft pour jouer<ArrowRight size={15} /></button> : <span className="playing-as"><img src={avatarUrl(activeAccount.id, 32)} data-fallback={avatarFallback(activeAccount.id, 32)} onError={handleAvatarError} alt="" />Vous jouez avec <strong>{activeAccount.name}</strong><ShieldCheck size={15} /></span>}
       </div>
     </section>
 

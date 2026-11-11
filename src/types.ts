@@ -61,6 +61,7 @@ export interface Account {
   id: string;
   name: string;
   skinUrl?: string;
+  skinVariant?: string;
   capes: Cape[];
   expiresAt: string;
 }

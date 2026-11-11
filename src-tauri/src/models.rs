@@ -105,6 +105,8 @@ pub struct Account {
     #[serde(default)]
     pub skin_url: Option<String>,
     #[serde(default)]
+    pub skin_variant: Option<String>,
+    #[serde(default)]
     pub capes: Vec<Cape>,
     pub expires_at: DateTime<Utc>,
 }

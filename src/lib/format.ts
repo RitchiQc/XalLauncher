@@ -1,3 +1,5 @@
+import type { SyntheticEvent } from "react";
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 o";
   const units = ["o", "Ko", "Mo", "Go", "To"];
@@ -25,4 +27,15 @@ export const loaderLabels = { vanilla: "Vanilla", fabric: "Fabric", quilt: "Quil
 
 export function avatarUrl(uuid: string, size = 128): string {
   return `https://crafatar.com/avatars/${uuid}?size=${size}&overlay=true`;
+}
+
+export function avatarFallback(uuid: string, size = 128): string {
+  return `https://mc-heads.net/avatar/${uuid}/${size}`;
+}
+
+export function handleAvatarError(event: SyntheticEvent<HTMLImageElement>) {
+  const image = event.currentTarget;
+  const fallback = image.dataset.fallback;
+  if (fallback && image.src !== fallback) { image.src = fallback; return; }
+  image.style.visibility = "hidden";
 }

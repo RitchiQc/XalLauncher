@@ -11,8 +11,8 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Connexion Microsoft par **device code**, puis Xbox Live, XSTS et Minecraft Services.
 - Vérification de la possession de Minecraft: Java Edition.
 - Plusieurs comptes, changement de compte actif et renouvellement de session.
-- Jetons conservés dans le **Coffre d’identification Windows**, jamais dans `settings.json`.
-- Profil, skin avec aperçu 3D, liste des capes possédées, activation et masquage d’une cape officielle.
+- Jetons conservés dans le **Coffre d’identification Windows** (backend `windows-native` de `keyring`, secret découpé en segments pour respecter la limite de 2 560 octets par entrée), jamais dans `settings.json`.
+- Profil, skin avec aperçu 3D, liste des capes possédées, activation et masquage d’une cape officielle. Les textures officielles sont forcées en HTTPS pour que l’aperçu 3D et les capes se chargent réellement.
 
 ### Instances et lancement
 
@@ -46,7 +46,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Serveurs favoris avec statut réel, MOTD, version, joueurs et latence.
 - Association d’un serveur à une instance et lancement rapide.
 - Thèmes sombre/clair, accents, animations réductibles et centre de progression.
-- Recherche manuelle ou automatique de mises à jour signées via GitHub Releases.
+- Recherche manuelle ou automatique de mises à jour signées via GitHub Releases (le dépôt ou l’hébergement du manifeste doit être accessible publiquement).
 - Interface actuellement en français.
 
 ## Démarrage du développement
@@ -104,7 +104,7 @@ Pour les Releases GitHub, crée la **variable** de dépôt `XAL_MICROSOFT_CLIENT
 
 ## Sécurité et jetons
 
-- Les jetons de renouvellement Microsoft et de session Minecraft sont conservés dans le Coffre d’identification Windows. Ils ne sont ni enregistrés dans les JSON du launcher ni exposés par une commande Tauri au frontend.
+- Les jetons de renouvellement Microsoft et de session Minecraft sont conservés dans le Coffre d’identification Windows, en plusieurs entrées (`<uuid>:meta`, `<uuid>:0`, `<uuid>:1`, …) afin de rester sous la limite de 2 560 octets du coffre. Ils ne sont ni enregistrés dans les JSON du launcher ni exposés par une commande Tauri au frontend.
 - Les corps des réponses d’erreur Microsoft/Xbox/Minecraft ne sont pas renvoyés à l’interface, afin d’éviter toute fuite accidentelle de données sensibles.
 - Les téléchargements exigent HTTPS. Les artefacts exécutables sans empreinte dans leur profil utilisent le checksum Maven SHA-256, avec SHA-1 uniquement comme repli de compatibilité. L’absence de checksum bloque leur utilisation.
 - Les publications Modrinth sont vérifiées par SHA-512 en priorité. Les fichiers en cache associés à une empreinte sont revérifiés avant réutilisation.
@@ -115,7 +115,7 @@ Pour les Releases GitHub, crée la **variable** de dépôt `XAL_MICROSOFT_CLIENT
 ## CI/CD et Releases
 
 - `.github/workflows/ci.yml` exécute les contrôles frontend et Rust sur `main` et les pull requests, ainsi que `npm audit` et `cargo audit` installé depuis un binaire Windows précompilé et vérifié.
-- `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, réutilise les artefacts release des tests Rust, puis publie l’installeur signé, sa signature et `latest.json`.
+- `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, aligne automatiquement `package.json` et `src-tauri/Cargo.toml` sur la version du tag (elle-même lue par `tauri.conf.json` via `"version": "../package.json"`), réutilise les artefacts release des tests Rust, puis publie l’installeur signé, sa signature et `latest.json`.
 - Le profil release utilise un LTO `thin` et 4 unités de génération de code pour réduire la durée des builds.
 - Les actions GitHub sont épinglées par SHA de commit pour limiter les risques de supply-chain.
 - Le job de publication utilise l’environnement GitHub `release`. Configure dans les paramètres du dépôt des approbateurs obligatoires et une restriction aux tags protégés avant de publier.
@@ -128,11 +128,11 @@ Secrets GitHub requis :
 Sur la machine de développement initiale, ces valeurs sont conservées hors du dépôt dans `%APPDATA%\XalLauncher\updater`. Sauvegardez-les : leur perte empêche de publier des mises à jour compatibles avec les installations existantes.
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.3
+git push origin v1.0.3
 ```
 
-La première Release doit être publiée avant que la recherche de mise à jour puisse trouver un package.
+Le tag est la source de vérité : le workflow réécrit `package.json` (et son verrou), `src-tauri/Cargo.toml` et donc la version lue par Tauri avant de compiler. Il vérifie ensuite que l’installeur produit s’appelle exactement `XalLauncher_<version>_x64-setup.exe` et que sa signature porte `version:<version>`, sinon la Release échoue au lieu de publier un binaire mal versionné. Une Release doit rester **publique, publiée et non marquée pre-release** : l’updater ne s’authentifie pas et `/releases/latest/download/latest.json` renvoie 404 sur un dépôt privé, ce qui produit l’erreur « Could not fetch a valid release JSON from the remote ». La première Release doit être publiée avant que la recherche de mise à jour puisse trouver un package.
 
 ## Structure
 
@@ -151,6 +151,7 @@ La première Release doit être publiée avant que la recherche de mise à jour 
 - Windows x64 uniquement ; macOS et Linux ne sont pas encore pris en charge.
 - Les très anciennes versions de Forge peuvent nécessiter des procédures spécifiques non couvertes.
 - CurseForge n’est pas intégré sans clé API et validation de ses conditions.
+- Le canal de mise à jour lit `latest.json` sans authentification : le dépôt (ou l’hébergement du manifeste) doit être public, sinon la vérification échoue.
 - Essential n’a pas d’intégration dédiée ; il reste installable comme un mod Modrinth ordinaire.
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.
 - Les tests de connexion, de possession du jeu et de lancement authentifié exigent un compte Microsoft réel ; ils ne sont pas simulés en CI.

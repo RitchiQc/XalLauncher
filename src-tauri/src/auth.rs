@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 
 const SERVICE: &str = "studio.xaltar.xallauncher";
 const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
+const CHUNK_SIZE: usize = 1000;
 
 async fn ensure_auth_success(
     response: reqwest::Response,
@@ -40,14 +41,97 @@ fn credential_entry(account_id: &str) -> Result<Entry> {
         .map_err(|error| AppError::new(format!("Coffre d’identification : {error}")))
 }
 
+fn meta_key(account_id: &str) -> String {
+    format!("{account_id}:meta")
+}
+
+fn chunk_key(account_id: &str, index: usize) -> String {
+    format!("{account_id}:{index}")
+}
+
+fn split_secret(secret: &str) -> Vec<String> {
+    let characters: Vec<char> = secret.chars().collect();
+    characters
+        .chunks(CHUNK_SIZE)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
+}
+
+fn join_secret(chunks: &[String]) -> String {
+    chunks.concat()
+}
+
+fn vault_error(error: keyring::Error) -> AppError {
+    AppError::new(format!(
+        "Coffre d’identification Windows inaccessible : {error}"
+    ))
+}
+
 fn save_credentials(account_id: &str, credentials: &Credentials) -> Result<()> {
-    credential_entry(account_id)?.set_password(&serde_json::to_string(credentials)?)?;
+    let payload = serde_json::to_string(credentials)?;
+    let chunks = split_secret(&payload);
+    let previous = credential_entry(&meta_key(account_id))?
+        .get_password()
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    for (index, chunk) in chunks.iter().enumerate() {
+        credential_entry(&chunk_key(account_id, index))?.set_password(chunk)?;
+    }
+    for index in chunks.len()..previous {
+        if let Ok(entry) = credential_entry(&chunk_key(account_id, index)) {
+            let _ = entry.delete_credential();
+        }
+    }
+    credential_entry(&meta_key(account_id))?.set_password(&chunks.len().to_string())?;
     Ok(())
 }
 
+fn read_secret(account_id: &str) -> Result<Option<String>> {
+    let meta = credential_entry(&meta_key(account_id))?;
+    match meta.get_password() {
+        Ok(value) => {
+            let count = value.parse::<usize>().map_err(|_| {
+                AppError::new("Coffre d’identification : entrée de session corrompue")
+            })?;
+            let mut chunks = Vec::with_capacity(count);
+            for index in 0..count {
+                chunks.push(credential_entry(&chunk_key(account_id, index))?.get_password()?);
+            }
+            Ok(Some(join_secret(&chunks)))
+        }
+        Err(keyring::Error::NoEntry) => match credential_entry(account_id)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(vault_error(error)),
+        },
+        Err(error) => Err(vault_error(error)),
+    }
+}
+
 fn read_credentials(account_id: &str) -> Result<Credentials> {
-    let value = credential_entry(account_id)?.get_password()?;
-    Ok(serde_json::from_str(&value)?)
+    let payload = read_secret(account_id)?
+        .ok_or_else(|| AppError::new("Session absente : reconnectez ce compte Microsoft"))?;
+    serde_json::from_str(&payload)
+        .map_err(|_| AppError::new("Session illisible : reconnectez ce compte Microsoft"))
+}
+
+fn delete_credentials(account_id: &str) {
+    let count = credential_entry(&meta_key(account_id))
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    for index in 0..count {
+        if let Ok(entry) = credential_entry(&chunk_key(account_id, index)) {
+            let _ = entry.delete_credential();
+        }
+    }
+    for key in [meta_key(account_id), account_id.to_string()] {
+        if let Ok(entry) = credential_entry(&key) {
+            let _ = entry.delete_credential();
+        }
+    }
 }
 
 #[tauri::command]
@@ -63,7 +147,7 @@ pub fn remove_account(
     let mut accounts = state.store.accounts()?;
     accounts.retain(|account| account.id != account_id);
     state.store.save_accounts(&accounts)?;
-    let _ = credential_entry(&account_id)?.delete_credential();
+    delete_credentials(&account_id);
     Ok(accounts)
 }
 
@@ -142,11 +226,11 @@ pub async fn begin_microsoft_login(
         }
     };
     let (account, credentials) = minecraft_account(&state.client, token).await?;
+    save_credentials(&account.id, &credentials)?;
     let mut accounts = state.store.accounts()?;
     accounts.retain(|item| item.id != account.id);
     accounts.insert(0, account.clone());
     state.store.save_accounts(&accounts)?;
-    save_credentials(&account.id, &credentials)?;
     Ok(account)
 }
 
@@ -261,22 +345,28 @@ async fn fetch_profile(client: &reqwest::Client, token: &str) -> Result<Account>
         .await?
         .json()
         .await?;
-    let skin_url = profile["skins"]
-        .as_array()
-        .and_then(|skins| {
-            skins
-                .iter()
-                .find(|skin| skin["state"] == "ACTIVE")
-                .or_else(|| skins.first())
-        })
+    let skin = profile["skins"].as_array().and_then(|skins| {
+        skins
+            .iter()
+            .find(|skin| skin["state"] == "ACTIVE")
+            .or_else(|| skins.first())
+    });
+    let skin_url = skin
         .and_then(|skin| skin["url"].as_str())
-        .map(str::to_string);
+        .map(secure_texture_url);
+    let skin_variant = skin
+        .and_then(|skin| skin["variant"].as_str())
+        .map(|variant| variant.to_lowercase());
     let capes = profile["capes"]
         .as_array()
         .map(|items| {
             items
                 .iter()
                 .filter_map(|item| serde_json::from_value::<Cape>(item.clone()).ok())
+                .map(|cape| Cape {
+                    url: secure_texture_url(&cape.url),
+                    ..cape
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -284,9 +374,18 @@ async fn fetch_profile(client: &reqwest::Client, token: &str) -> Result<Account>
         id: required_string(&profile, "id")?,
         name: required_string(&profile, "name")?,
         skin_url,
+        skin_variant,
         capes,
         expires_at: Utc::now(),
     })
+}
+
+fn secure_texture_url(url: &str) -> String {
+    url.replacen(
+        "http://textures.minecraft.net",
+        "https://textures.minecraft.net",
+        1,
+    )
 }
 
 pub async fn valid_token(state: &crate::AppState, account_id: &str) -> Result<(Account, String)> {
@@ -296,8 +395,7 @@ pub async fn valid_token(state: &crate::AppState, account_id: &str) -> Result<(A
         .into_iter()
         .find(|item| item.id == account_id)
         .ok_or_else(|| AppError::new("Compte Minecraft introuvable"))?;
-    let credentials = read_credentials(account_id)
-        .map_err(|_| AppError::new("Session absente : reconnectez ce compte Microsoft"))?;
+    let credentials = read_credentials(account_id)?;
     if credentials.expires_at > Utc::now() + Duration::seconds(60) {
         return Ok((account, credentials.minecraft_token));
     }
@@ -400,7 +498,10 @@ pub async fn set_active_cape(
 
 #[cfg(test)]
 mod tests {
-    use super::DEVICE_CODE_GRANT;
+    use super::{
+        delete_credentials, join_secret, read_credentials, read_secret, save_credentials,
+        secure_texture_url, split_secret, Credentials, Duration, Utc, DEVICE_CODE_GRANT,
+    };
 
     #[test]
     fn uses_microsoft_device_code_grant() {
@@ -408,5 +509,49 @@ mod tests {
             DEVICE_CODE_GRANT,
             "urn:ietf:params:oauth:grant-type:device_code"
         );
+    }
+
+    #[test]
+    fn splits_secret_into_bounded_chunks() {
+        let secret = "a".repeat(2500);
+        let chunks = split_secret(&secret);
+        assert_eq!(chunks.len(), 3);
+        assert!(chunks.iter().all(|chunk| chunk.chars().count() <= 1000));
+        assert_eq!(join_secret(&chunks), secret);
+    }
+
+    #[test]
+    fn rejoins_secret_chunks() {
+        let chunks = vec!["{\"refresh_token\":\"ab".to_string(), "cd\"}".to_string()];
+        assert_eq!(join_secret(&chunks), "{\"refresh_token\":\"abcd\"}");
+    }
+
+    #[test]
+    fn upgrades_texture_urls_to_https() {
+        assert_eq!(
+            secure_texture_url("http://textures.minecraft.net/texture/abc"),
+            "https://textures.minecraft.net/texture/abc"
+        );
+        assert_eq!(
+            secure_texture_url("https://textures.minecraft.net/texture/abc"),
+            "https://textures.minecraft.net/texture/abc"
+        );
+    }
+
+    #[test]
+    #[ignore = "écrit temporairement dans le Coffre d’identification Windows"]
+    fn round_trips_chunked_credentials_in_the_windows_vault() {
+        let account_id = "xallauncher-selftest";
+        let credentials = Credentials {
+            refresh_token: "r".repeat(1500),
+            minecraft_token: "m".repeat(1800),
+            expires_at: Utc::now() + Duration::hours(1),
+        };
+        save_credentials(account_id, &credentials).expect("écriture du coffre");
+        let restored = read_credentials(account_id).expect("lecture du coffre");
+        assert_eq!(restored.refresh_token, credentials.refresh_token);
+        assert_eq!(restored.minecraft_token, credentials.minecraft_token);
+        delete_credentials(account_id);
+        assert!(read_secret(account_id).expect("coffre").is_none());
     }
 }

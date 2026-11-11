@@ -22,6 +22,21 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
+      - name: Aligner la version sur le tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag de release invalide : $env:RELEASE_TAG" }
+          npm version $version --no-git-tag-version --allow-same-version
+          $cargo = Get-Content 'src-tauri/Cargo.toml' -Raw
+          $cargo = $cargo -replace '(?m)^version = "\d+\.\d+\.\d+[^"]*"', "version = `"$version`""
+          [IO.File]::WriteAllText((Join-Path $PWD 'src-tauri/Cargo.toml'), $cargo, [Text.UTF8Encoding]::new($false))
+          $packageVersion = (Get-Content 'package.json' -Raw | ConvertFrom-Json).version
+          if ($packageVersion -ne $version) { throw "package.json non synchronisé : $packageVersion au lieu de $version" }
+          if (-not (Select-String -Path 'src-tauri/Cargo.toml' -Pattern "^version = `"$([regex]::Escape($version))`"$")) { throw "src-tauri/Cargo.toml non synchronisé sur $version" }
+          Write-Host "Version synchronisée depuis $env:RELEASE_TAG : package.json=$packageVersion, Cargo.toml=$version"
       - run: npm test
       - run: cargo test --release --manifest-path src-tauri/Cargo.toml
       - name: Build and sign XalLauncher
@@ -38,9 +53,19 @@ jobs:
           $tag = $env:RELEASE_TAG
           $version = $tag.TrimStart('v')
           $source = 'src-tauri/target/release/bundle/nsis'
-          $setup = Get-ChildItem $source -Filter '*-setup.exe' | Where-Object { $_.Name -notlike 'XalLauncher-v*' } | Select-Object -First 1
-          $signature = Get-ChildItem $source -Filter '*-setup.exe.sig' | Select-Object -First 1
-          if (-not $setup -or -not $signature) { throw 'Signed updater artifacts not found' }
+          $expectedSetup = "XalLauncher_${version}_x64-setup.exe"
+          $setup = Get-ChildItem $source -Filter $expectedSetup | Select-Object -First 1
+          if (-not $setup) {
+            $found = (Get-ChildItem $source -Filter '*-setup.exe' | ForEach-Object { $_.Name }) -join ', '
+            throw "Version incohérente : $expectedSetup introuvable. Artefacts présents : $found"
+          }
+          $signature = Get-ChildItem $source -Filter '*-setup.exe.sig' | Where-Object { $_.Name -like "*${version}*" } | Select-Object -First 1
+          if (-not $signature) { throw "Signature introuvable pour la version $version" }
+          $signatureRaw = (Get-Content $signature.FullName -Raw).Trim()
+          $signatureText = if ($signatureRaw -match '^untrusted comment') { $signatureRaw } else { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($signatureRaw)) }
+          if ($signatureText -notmatch "version:$([regex]::Escape($version))") { throw "Signature incohérente : elle ne porte pas la version $version" }
+          if ($signatureText -notmatch "file:$([regex]::Escape($expectedSetup))") { throw "Signature incohérente : elle ne couvre pas $expectedSetup" }
+          Write-Host "Installeur $($setup.Name) compilé et signé pour la version $version"
           $setupName = "XalLauncher-$tag-x64-setup.exe"
           Copy-Item $setup.FullName (Join-Path $source $setupName)
           Copy-Item $signature.FullName (Join-Path $source "$setupName.sig")
@@ -59,6 +84,8 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
           generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/nsis/latest.json
