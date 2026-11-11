@@ -54,7 +54,7 @@ Chaque instance possède un onglet **Modules**. Les réglages sont appliqués au
   - presets graphiques dans `options.txt` (distance de rendu/simulation, particules, ombres, nuages, V-Sync, FPS max…), avec sauvegarde puis restauration automatique ;
   - priorité Windows élevée et désactivation d’EcoQoS ;
   - affinité sur les cœurs performance des CPU hybrides, avec `ActiveProcessorCount` aligné.
-- **Branding XalLauncher** (activé par défaut) : resource pack généré automatiquement avec panorama nébuleuse, splashs, icône de pack, titre de fenêtre XalLauncher. Désactivable par instance ; le pack est alors retiré des options du jeu.
+- **Branding XalLauncher** (activé par défaut) : resource pack généré automatiquement avec panorama cubemap 1024×1024 sans couture (nébuleuse procédurale, bande galactique et étoiles anti-aliasées de tailles variables), splashs, icône de pack et titre de fenêtre XalLauncher. Le pack est régénéré quand son contenu change. Désactivable par instance ; le pack est alors retiré des options du jeu.
 - **Diagnostic de crash** (activé par défaut) : après un arrêt anormal, analyse du journal et des rapports de crash, détection des causes fréquentes (mémoire, Java, dépendances, Mixin, graphismes, installation corrompue, port) et actions recommandées.
 - **Sauvegarde automatique** : ZIP des mondes avant chaque lancement.
 - **Mode jeu** : les animations lourdes du launcher (nébuleuse, étoiles, flous) sont coupées pendant une partie.
