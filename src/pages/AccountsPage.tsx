@@ -6,6 +6,7 @@ import { PlayerHead } from "@/components/PlayerHead";
 import { SkinPreview } from "@/components/SkinPreview";
 import { Button, EmptyState, Modal, PageHeader } from "@/components/UI";
 import { api } from "@/lib/api";
+import { confirmAction } from "@/lib/dialog";
 import { useLauncher } from "@/state/LauncherContext";
 
 export function AccountsPage() {
@@ -27,7 +28,7 @@ export function AccountsPage() {
     if (account) { await refreshAccounts(); setActiveAccountId(account.id); setAdding(false); }
   }
   async function remove(id: string) {
-    if (!window.confirm("Déconnecter ce compte de XalLauncher ?")) return;
+    if (!(await confirmAction("Déconnecter ce compte de XalLauncher ?", "Déconnexion"))) return;
     const result = await perform(() => api.removeAccount(id), "Compte déconnecté");
     if (result) await refreshAccounts();
   }

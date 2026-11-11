@@ -13,8 +13,10 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Plusieurs comptes, changement de compte actif et renouvellement de session.
 - Jetons conservés dans le **Coffre d’identification Windows** (backend `windows-native` de `keyring`, secret découpé en segments pour respecter la limite de 2 560 octets par entrée), jamais dans `settings.json`.
 - Profil, skin avec aperçu 3D, liste des capes possédées, activation et masquage d’une cape officielle. Les textures officielles sont forcées en HTTPS pour que l’aperçu 3D et les capes se chargent réellement.
-- Têtes de joueur dessinées directement depuis la texture officielle du skin (visage + chapeau), sans dépendre de Crafatar ou mc-heads.
-- Vignettes de capes découpées sur le panneau arrière réel de la texture 64×32, au lieu d’afficher la planche complète.
+- Têtes de joueur dessinées directement depuis la texture officielle du skin (visage + chapeau), sans dépendre de Crafatar ou mc-heads. Le cadrage est calculé sur les dimensions réelles de la texture (64×32, 64×64 et skins HD), jamais sur une taille supposée.
+- Si la texture officielle est indisponible, repli sur mc-heads puis Crafatar, et enfin sur une vignette à l’initiale du pseudo : plus jamais de carré noir.
+- Vignettes de capes découpées sur la **face extérieure réelle** de la texture (colonnes 1-10, lignes 1-16), en 64×32 comme en legacy 22×17, avec mise à l’échelle calculée sur les dimensions de l’image.
+- Toutes les confirmations d’actions destructives (déconnexion d’un compte, suppression ou restauration de sauvegarde, suppression de contenu ou de serveur, avertissement « code Java ») passent par la boîte de dialogue native `plugin-dialog` : `window.confirm` est remplacé par le plugin et renvoie une Promise, ce qui laissait passer les actions sans attendre la réponse.
 
 ### Instances et lancement
 
@@ -64,7 +66,7 @@ Chaque instance possède un onglet **Modules**. Les réglages sont appliqués au
 - Serveurs favoris avec statut réel, MOTD, version, joueurs et latence.
 - Association d’un serveur à une instance et lancement rapide.
 - Thèmes sombre, clair et **Espace** (nébuleuses animées et étoiles scintillantes), accents, animations réductibles et centre de progression.
-- Recherche manuelle ou automatique de mises à jour signées via GitHub Releases (le dépôt ou l’hébergement du manifeste doit être accessible publiquement).
+- Recherche manuelle ou automatique de mises à jour signées via GitHub Releases (le dépôt ou l’hébergement du manifeste doit être accessible publiquement). L’installation n’est lancée qu’après une confirmation native ; sous Windows, le launcher se ferme volontairement lorsque l’installeur démarre, puis redémarre à la fin.
 - Interface actuellement en français.
 
 ## Démarrage du développement

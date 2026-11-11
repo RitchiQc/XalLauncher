@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Download, FileBox, Image, Power, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { api } from "@/lib/api";
+import { confirmAction } from "@/lib/dialog";
 import { formatBytes, formatDate } from "@/lib/format";
 import { confirmCodeExecution } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
@@ -31,7 +32,7 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
   }, [instanceId, items, kind]);
 
   async function importFile() {
-    if (kind === "mod" && !confirmCodeExecution("Ce mod")) return;
+    if (kind === "mod" && !(await confirmCodeExecution("Ce mod"))) return;
     const extensions = kind === "mod" ? ["jar"] : ["zip"];
     const path = await open({ multiple: false, filters: [{ name: labels[kind], extensions }] });
     if (!path) return;
@@ -43,7 +44,7 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
     if (result) await refresh();
   }
   async function remove(item: ContentEntry) {
-    if (!window.confirm(`Supprimer « ${item.projectTitle ?? item.fileName} » ?`)) return;
+    if (!(await confirmAction(`Supprimer « ${item.projectTitle ?? item.fileName} » ?`, "Supprimer un contenu"))) return;
     const result = await perform(() => api.deleteContent(instanceId, kind, item.fileName), "Contenu supprimé");
     if (result !== undefined) await refresh();
   }

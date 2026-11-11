@@ -86,7 +86,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
 
   async function openVersions(project: ProjectHit) {
     if (kind === "modpack") {
-      if (!confirmCodeExecution("Ce modpack")) return;
+      if (!(await confirmCodeExecution("Ce modpack"))) return;
       setInstalling(project.projectId);
       const created = await perform(() => api.installModpack(project.projectId), `« ${project.title} » installé`);
       setInstalling(undefined);

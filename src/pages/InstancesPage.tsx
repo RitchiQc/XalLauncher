@@ -30,7 +30,7 @@ export function InstancesPage() {
     if (result) await refreshInstances();
   }
   async function importPack() {
-    if (!confirmCodeExecution("Ce modpack")) return;
+    if (!(await confirmCodeExecution("Ce modpack"))) return;
     const path = await open({ multiple: false, filters: [{ name: "Modpack Modrinth", extensions: ["mrpack"] }] });
     if (!path) return;
     setBusy(true);

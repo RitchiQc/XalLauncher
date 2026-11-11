@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArchiveRestore, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { confirmAction } from "@/lib/dialog";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useLauncher } from "@/state/LauncherContext";
 import type { BackupEntry } from "@/types";
@@ -18,12 +19,12 @@ export function BackupPanel({ instanceId }: { instanceId: string }) {
     if (result) await refresh();
   }
   async function restore(backup: BackupEntry) {
-    if (!window.confirm(`Restaurer « ${backup.name} » ? Les fichiers portant le même nom seront remplacés.`)) return;
+    if (!(await confirmAction(`Restaurer « ${backup.name} » ? Les fichiers portant le même nom seront remplacés.`, "Restaurer une sauvegarde"))) return;
     setBusy(true); const result = await perform(() => api.restoreBackup(backup.id), "Mondes restaurés"); setBusy(false);
     if (result !== undefined) await refresh();
   }
   async function remove(backup: BackupEntry) {
-    if (!window.confirm("Supprimer cette sauvegarde ?")) return;
+    if (!(await confirmAction("Supprimer cette sauvegarde ?", "Supprimer une sauvegarde"))) return;
     const result = await perform(() => api.deleteBackup(backup.id), "Sauvegarde supprimée");
     if (result !== undefined) await refresh();
   }

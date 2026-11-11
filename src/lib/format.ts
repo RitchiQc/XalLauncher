@@ -25,12 +25,13 @@ export function formatDate(value?: string): string {
 
 export const loaderLabels = { vanilla: "Vanilla", fabric: "Fabric", quilt: "Quilt", forge: "Forge", neoforge: "NeoForge" } as const;
 
+// mc-heads est utilisé en premier : Crafatar répond régulièrement HTTP 500.
 export function avatarUrl(uuid: string, size = 128): string {
-  return `https://crafatar.com/avatars/${uuid}?size=${size}&overlay=true`;
+  return `https://mc-heads.net/avatar/${uuid}/${size}`;
 }
 
 export function avatarFallback(uuid: string, size = 128): string {
-  return `https://mc-heads.net/avatar/${uuid}/${size}`;
+  return `https://crafatar.com/avatars/${uuid}?size=${size}&overlay=true`;
 }
 
 export function handleAvatarError(event: SyntheticEvent<HTMLImageElement>) {

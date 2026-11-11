@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Globe2, Pencil, Play, Plus, RefreshCw, Server, Signal, Trash2, Users } from "lucide-react";
 import { Button, EmptyState, Modal, PageHeader } from "@/components/UI";
 import { api } from "@/lib/api";
+import { confirmAction } from "@/lib/dialog";
 import { useLauncher } from "@/state/LauncherContext";
 import type { ServerEntry, ServerStatus } from "@/types";
 
@@ -34,7 +35,7 @@ export function ServersPage() {
     if (result) { await refreshServers(); setFormOpen(false); }
   }
   async function remove(server: ServerEntry) {
-    if (!window.confirm(`Retirer ${server.name} des favoris ?`)) return;
+    if (!(await confirmAction(`Retirer ${server.name} des favoris ?`, "Retirer un serveur"))) return;
     const result = await perform(() => api.deleteServer(server.id), "Serveur supprimé");
     if (result) await refreshServers();
   }

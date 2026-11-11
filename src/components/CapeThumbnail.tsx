@@ -1,24 +1,28 @@
 import { useEffect, useState } from "react";
 
+type Texture = { url: string; width: number; height: number };
+
 export function CapeThumbnail({ url, alias }: { url: string; alias: string }) {
-  const [legacy, setLegacy] = useState(false);
+  const [texture, setTexture] = useState<Texture>();
 
   useEffect(() => {
-    setLegacy(false);
+    setTexture(undefined);
     let active = true;
     const image = new Image();
-    image.onload = () => { if (active) setLegacy(image.naturalWidth > 0 && image.naturalWidth < 64); };
+    image.onload = () => {
+      if (active && image.naturalWidth >= 22 && image.naturalHeight >= 17) setTexture({ url, width: image.naturalWidth, height: image.naturalHeight });
+    };
     image.src = url;
     return () => { active = false; };
   }, [url]);
 
-  const scale = 4;
-  const width = (legacy ? 22 : 64) * scale;
-  const height = (legacy ? 17 : 32) * scale;
-  const offsetX = -12 * scale;
+  if (!texture) return <span className="cape-thumb cape-thumb-loading" aria-hidden="true" />;
+
+  // Face extérieure de la cape : colonnes 1-10 et lignes 1-16, en 64x32 comme en legacy 22x17.
+  const scale = (texture.width / (texture.width >= 64 ? 64 : 22)) * 4;
   return <span className="cape-thumb" role="img" aria-label={`Cape ${alias}`} style={{
-    backgroundImage: `url("${url}")`,
-    backgroundSize: `${width}px ${height}px`,
-    backgroundPosition: `${offsetX}px ${-1 * scale}px`,
+    backgroundImage: `url("${texture.url}")`,
+    backgroundSize: `${texture.width * scale}px ${texture.height * scale}px`,
+    backgroundPosition: `${-1 * scale}px ${-1 * scale}px`,
   }} />;
 }

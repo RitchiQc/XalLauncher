@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Download, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
 import { Button, PageHeader, ProgressBar, Toggle } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
+import { confirmAction } from "@/lib/dialog";
 import { findUpdate } from "@/lib/updates";
 import { useLauncher } from "@/state/LauncherContext";
 
@@ -13,6 +14,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [updateStatus, setUpdateStatus] = useState("");
   const [updateProgress, setUpdateProgress] = useState<number>();
+  const [updating, setUpdating] = useState(false);
   const dirty = JSON.stringify(form) !== JSON.stringify(settings);
   function patch<K extends keyof typeof form>(key: K, value: (typeof form)[K]) { setForm((current) => ({ ...current, [key]: value })); }
   async function save() {
@@ -20,20 +22,27 @@ export function SettingsPage() {
     if (result) setSettings(result);
   }
   async function checkUpdate() {
-    setUpdateStatus("Recherche d’une mise à jour…"); setUpdateProgress(undefined);
+    setUpdateStatus("Recherche d’une mise à jour…"); setUpdateProgress(undefined); setUpdating(true);
     let update: Awaited<ReturnType<typeof findUpdate>> = null;
     try { update = await findUpdate(); }
     catch (error) {
       const message = errorMessage(error);
       setUpdateStatus(`Vérification impossible : ${message}`);
       notify(message, "error");
+      setUpdating(false);
       return;
     }
-    if (!update) { setUpdateStatus("Vous utilisez la dernière version disponible."); return; }
-    if (!window.confirm(`La version ${update.version} est disponible. L’installer maintenant ?`)) { setUpdateStatus(`Version ${update.version} disponible.`); return; }
+    if (!update) { setUpdateStatus("Vous utilisez la dernière version disponible."); setUpdating(false); return; }
+    const accepted = await confirmAction(`La version ${update.version} est disponible. L’installer maintenant ?`, "Mise à jour disponible", "info");
+    if (!accepted) {
+      setUpdateStatus(`Version ${update.version} disponible.`);
+      await update.close().catch(() => undefined);
+      setUpdating(false);
+      return;
+    }
     let downloaded = 0;
     let total = 0;
-    setUpdateStatus(`Téléchargement de la version ${update.version}…`);
+    setUpdateStatus(`Téléchargement de la version ${update.version}… XalLauncher va se fermer pour installer la mise à jour.`);
     const result = await perform(() => update.downloadAndInstall((event) => {
       if (event.event === "Started") total = event.data.contentLength ?? 0;
       if (event.event === "Progress") {
@@ -43,6 +52,7 @@ export function SettingsPage() {
       if (event.event === "Finished") setUpdateProgress(100);
     }), "Mise à jour installée. XalLauncher va redémarrer.");
     if (result !== undefined) setUpdateStatus("Installation terminée.");
+    setUpdating(false);
   }
 
   return <div className="page settings-page"><PageHeader eyebrow="Personnalisation" title="Paramètres" description="Réglez XalLauncher selon votre machine et vos préférences." actions={<Button onClick={() => void save()} loading={saving} disabled={!dirty}><Save size={17} />Enregistrer</Button>} />
@@ -53,7 +63,7 @@ export function SettingsPage() {
     </div></section>
     <section className="settings-section panel"><header><Download /><div><h2>Téléchargements</h2><p>Contrôlez la charge réseau pendant l’installation du jeu et des contenus.</p></div></header><div className="settings-body"><label className="setting-row"><span><strong>Tâches simultanées</strong><small>Entre 1 et 32 téléchargements parallèles.</small></span><div className="number-control"><input type="range" min={1} max={32} value={form.downloadConcurrency} onChange={(event) => patch("downloadConcurrency", Number(event.target.value))} /><strong>{form.downloadConcurrency}</strong></div></label></div></section>
     <section className="settings-section panel"><header><KeyRound /><div><h2>Authentification Microsoft</h2><p>Identifiant public de votre application Microsoft Entra.</p></div></header><div className="settings-body"><label className="field"><span>Application (client) ID</span><input value={form.microsoftClientId} onChange={(event) => patch("microsoftClientId", event.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /><small>Activez « Autoriser le flux de code d’appareil » pour cette application publique. Aucun secret client n’est stocké.</small></label></div></section>
-    <section className="settings-section panel"><header><RefreshCw /><div><h2>Mises à jour du launcher</h2><p>Packages vérifiés par signature avant installation.</p></div></header><div className="settings-body"><Toggle checked={form.autoUpdate} onChange={(value) => patch("autoUpdate", value)} label="Rechercher les nouvelles versions au démarrage" /><div className="setting-row"><span><strong>Canal stable</strong><small>{updateStatus || "Vérifiez manuellement les Releases GitHub."}</small></span><Button variant="secondary" onClick={() => void checkUpdate()}><RefreshCw size={16} />Vérifier</Button></div>{updateProgress !== undefined ? <ProgressBar value={updateProgress} label="Mise à jour" /> : null}</div></section>
+    <section className="settings-section panel"><header><RefreshCw /><div><h2>Mises à jour du launcher</h2><p>Packages vérifiés par signature avant installation.</p></div></header><div className="settings-body"><Toggle checked={form.autoUpdate} onChange={(value) => patch("autoUpdate", value)} label="Rechercher les nouvelles versions au démarrage" /><div className="setting-row"><span><strong>Canal stable</strong><small>{updateStatus || "Vérifiez manuellement les Releases GitHub."}</small></span><Button variant="secondary" onClick={() => void checkUpdate()} loading={updating} disabled={updating}><RefreshCw size={16} />Vérifier</Button></div>{updateProgress !== undefined ? <ProgressBar value={updateProgress} label="Mise à jour" /> : null}</div></section>
     <section className="settings-section panel about-section"><header><MonitorCog /><div><h2>À propos</h2><p>XalLauncher {__APP_VERSION__} · Windows</p></div></header><div className="settings-body"><p>Développé par <strong>Xaltar Studio</strong> avec Tauri, React et Rust. Minecraft est une marque de Mojang Synergies AB. XalLauncher n’est pas affilié à Mojang ou Microsoft.</p></div></section>
   </div>;
 }
