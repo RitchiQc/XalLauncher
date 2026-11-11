@@ -54,7 +54,7 @@ Chaque instance possède un onglet **Modules**. Les réglages sont appliqués au
   - presets graphiques dans `options.txt` (distance de rendu/simulation, particules, ombres, nuages, V-Sync, FPS max…), avec sauvegarde puis restauration automatique ;
   - priorité Windows élevée et désactivation d’EcoQoS ;
   - affinité sur les cœurs performance des CPU hybrides, avec `ActiveProcessorCount` aligné.
-- **Branding XalLauncher** (activé par défaut) : resource pack généré automatiquement avec panorama cubemap 1024×1024 sans couture (nébuleuse procédurale, bande galactique et étoiles anti-aliasées de tailles variables), splashs, icône de pack et titre de fenêtre XalLauncher. Le pack est régénéré quand son contenu change. Désactivable par instance ; le pack est alors retiré des options du jeu.
+- **Branding XalLauncher** (activé par défaut) : resource pack avec panorama cubemap 2048×2048 **pré-calculé et embarqué dans le binaire** (nébuleuse volumétrique, poussière en absorption, étoiles avec profondeur, dithering anti-banding), splashs, icône de pack et titre de fenêtre XalLauncher. Aucun rendu n'a lieu au lancement : le pack est simplement copié dans l'instance. Désactivable par instance ; le pack est alors retiré des options du jeu.
 - **Diagnostic de crash** (activé par défaut) : après un arrêt anormal, analyse du journal et des rapports de crash, détection des causes fréquentes (mémoire, Java, dépendances, Mixin, graphismes, installation corrompue, port) et actions recommandées.
 - **Sauvegarde automatique** : ZIP des mondes avant chaque lancement.
 - **Mode jeu** : les animations lourdes du launcher (nébuleuse, étoiles, flous) sont coupées pendant une partie.
@@ -92,6 +92,12 @@ npm.cmd run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
 cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+Régénérer le panorama de branding (hors-ligne, ~45 s en release) :
+
+```powershell
+cargo run --release --manifest-path src-tauri/Cargo.toml --example bake_branding -- --size 2048 --ss 2
 ```
 
 Créer l’installeur et les artefacts de mise à jour :
@@ -164,7 +170,8 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src-tauri/src/backup.rs` : sauvegardes des mondes.
 - `src-tauri/src/servers.rs` : protocole Server List Ping.
 - `src-tauri/src/modules.rs` : module Performance (JVM, `options.txt`, priorité/EcoQoS, affinité P-cores).
-- `src-tauri/src/branding.rs` : génération du resource pack XalLauncher.
+- `src-tauri/src/branding.rs` : écriture du resource pack XalLauncher à partir du panorama pré-calculé.
+- `src-tauri/examples/bake_branding.rs` : rendu hors-ligne du panorama (volume 256³, raymarching, poussière, bloom, dithering) vers `src-tauri/assets/branding/`.
 - `src-tauri/src/options.rs` : lecture/écriture sûre d’`options.txt`.
 - `src-tauri/src/crash.rs` : diagnostic des plantages.
 
@@ -178,6 +185,7 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.
 - Le module Performance n’installe aucun mod : il agit uniquement sur la JVM, `options.txt` et le processus Windows.
 - Le Branding est un resource pack (menu, splashs, icône, titre) ; l’écran de chargement et l’icône de fenêtre 100 % personnalisés nécessiteraient un mod compagnon, non inclus.
+- Le panorama de branding pèse environ 26 Mo de PNG embarqués (~4 à 5 Mo par face), et chaque instance reçoit sa propre copie du pack. Modifier le panorama impose de relancer `bake_branding` puis de reconstruire l’application.
 - Discord Rich Presence et la mise à jour automatique des mods ne sont pas implémentés.
 - Les tests de connexion, de possession du jeu et de lancement authentifié exigent un compte Microsoft réel ; ils ne sont pas simulés en CI.
 

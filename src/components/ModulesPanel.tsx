@@ -58,7 +58,7 @@ export function ModulesPanel({ instance, onSaved }: { instance: Instance; onSave
         <span className="module-note">options.txt est sauvegardé puis restauré automatiquement quand le module est désactivé.</span>
       </ModuleCard>
 
-      <ModuleCard icon={<Sparkles />} title="Branding XalLauncher" description="Panorama nébuleuse, splashs, icône de pack et titre de fenêtre XalLauncher." enabled={modules.branding} onToggle={(value) => void update({ branding: value })}>
+      <ModuleCard icon={<Sparkles />} title="Branding XalLauncher" description="Panorama nébuleuse HD pré-calculé, splashs, icône de pack et titre de fenêtre XalLauncher." enabled={modules.branding} onToggle={(value) => void update({ branding: value })}>
         <span className="module-note">Activé par défaut. Désactivable à tout moment ; le pack est retiré des options du jeu.</span>
       </ModuleCard>
 
