@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { AlertCircle, Check, Info, LoaderCircle, X } from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
 import { useLauncher } from "@/state/LauncherContext";
 
 export function Button({ children, variant = "primary", loading, className = "", disabled, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -49,5 +50,5 @@ export function Toasts() {
 }
 
 export function LoadingScreen() {
-  return <div className="loading-screen"><div className="brand-mark large">X</div><LoaderCircle className="spin" size={26} /><span>Préparation de XalLauncher…</span></div>;
+  return <div className="loading-screen"><BrandMark large /><LoaderCircle className="spin" size={26} /><span>Préparation de XalLauncher…</span></div>;
 }

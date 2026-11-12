@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Box, ChevronDown, CloudDownload, Home, Library, Server, Settings, UserRound } from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
 import { PlayerHead } from "@/components/PlayerHead";
 import { LoadingScreen, ProgressBar, Toasts } from "@/components/UI";
 import { loaderLabels } from "@/lib/format";
@@ -29,7 +30,7 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => navigate("/")}><span className="brand-mark">X</span><span><strong>XalLauncher</strong><small>XALTAR STUDIO</small></span></button>
+      <button className="brand" onClick={() => navigate("/")}><BrandMark /><span><strong>XalLauncher</strong><small>XALTAR STUDIO</small></span></button>
       <nav className="main-nav">{navigation.map((item) => <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => isActive ? "active" : ""}><item.icon size={19} /><span>{item.label}</span></NavLink>)}</nav>
       <div className="sidebar-bottom">
         {progress ? <div className="download-widget"><CloudDownload size={17} /><div><strong>{progress.label}</strong><ProgressBar value={progress.total ? progress.current / progress.total * 100 : 0} /></div></div> : null}
