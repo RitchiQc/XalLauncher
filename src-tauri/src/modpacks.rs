@@ -11,7 +11,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 
-fn safe_relative(path: &str) -> Result<PathBuf> {
+pub(crate) fn safe_relative(path: &str) -> Result<PathBuf> {
     let path = Path::new(path);
     if path.is_absolute()
         || path
@@ -43,18 +43,19 @@ fn loader_from_dependencies(dependencies: &Value, minecraft: &str) -> (Loader, O
     (Loader::Vanilla, None)
 }
 
-async fn import_pack(
+pub(crate) async fn import_pack(
     client: reqwest::Client,
     store: Store,
-    app: AppHandle,
+    app: Option<AppHandle>,
     archive_path: PathBuf,
     custom_name: Option<String>,
+    archive_prefix: &str,
 ) -> Result<Instance> {
     let file = fs::File::open(&archive_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
     let index = {
         let mut file = archive
-            .by_name("modrinth.index.json")
+            .by_name(&format!("{archive_prefix}modrinth.index.json"))
             .map_err(|_| AppError::new("Cette archive n’est pas un modpack Modrinth valide"))?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
@@ -68,7 +69,16 @@ async fn import_pack(
     let id = uuid::Uuid::new_v4().to_string();
     let game_dir = store.game_dir(&id);
     fs::create_dir_all(&game_dir)?;
-    let result = install_pack_files(&client, &store, &app, &game_dir, &mut archive, &index).await;
+    let result = install_pack_files(
+        &client,
+        &store,
+        app.as_ref(),
+        &game_dir,
+        &mut archive,
+        &index,
+        archive_prefix,
+    )
+    .await;
     if let Err(error) = result {
         let _ = fs::remove_dir_all(store.instance_dir(&id));
         return Err(error);
@@ -108,13 +118,27 @@ async fn import_pack(
     Ok(instance)
 }
 
+fn pack_relative<'a>(path: &'a str, archive_prefix: &str) -> Option<&'a str> {
+    let path = path.strip_prefix(archive_prefix)?;
+    let folder = ["overrides/", "client-overrides/"]
+        .into_iter()
+        .find(|folder| path.starts_with(folder))?;
+    let relative = &path[folder.len()..];
+    if relative.is_empty() {
+        None
+    } else {
+        Some(relative)
+    }
+}
+
 async fn install_pack_files(
     client: &reqwest::Client,
     store: &Store,
-    app: &AppHandle,
+    app: Option<&AppHandle>,
     game_dir: &Path,
     archive: &mut zip::ZipArchive<fs::File>,
     index: &Value,
+    archive_prefix: &str,
 ) -> Result<()> {
     for number in 0..archive.len() {
         let mut entry = archive.by_index(number)?;
@@ -122,16 +146,9 @@ async fn install_pack_files(
             continue;
         };
         let path_string = path.to_string_lossy().replace('\\', "/");
-        let prefix = ["overrides/", "client-overrides/"]
-            .into_iter()
-            .find(|prefix| path_string.starts_with(prefix));
-        let Some(prefix) = prefix else {
+        let Some(relative) = pack_relative(&path_string, archive_prefix) else {
             continue;
         };
-        let relative = &path_string[prefix.len()..];
-        if relative.is_empty() {
-            continue;
-        }
         let target = game_dir.join(safe_relative(relative)?);
         if entry.is_dir() {
             fs::create_dir_all(target)?;
@@ -179,7 +196,7 @@ async fn install_pack_files(
     let concurrency = store.settings()?.download_concurrency.clamp(1, 32);
     stream::iter(jobs.into_iter().map(|(path, url, checksum)| {
         let client = client.clone();
-        let app = app.clone();
+        let app = app.cloned();
         let completed = completed.clone();
         let game_dir = game_dir.to_path_buf();
         async move {
@@ -195,15 +212,17 @@ async fn install_pack_files(
             )
             .await?;
             let current = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            let _ = app.emit(
-                "download-progress",
-                ProgressEvent {
-                    operation: "modpack",
-                    label: "Fichiers du modpack",
-                    current: current as u64,
-                    total: total as u64,
-                },
-            );
+            if let Some(app) = &app {
+                let _ = app.emit(
+                    "download-progress",
+                    ProgressEvent {
+                        operation: "modpack",
+                        label: "Fichiers du modpack",
+                        current: current as u64,
+                        total: total as u64,
+                    },
+                );
+            }
             Ok::<(), AppError>(())
         }
     }))
@@ -220,7 +239,15 @@ pub async fn import_modrinth_pack(
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Instance> {
-    import_pack(state.client.clone(), state.store.clone(), app, path, name).await
+    import_pack(
+        state.client.clone(),
+        state.store.clone(),
+        Some(app),
+        path,
+        name,
+        "",
+    )
+    .await
 }
 
 #[tauri::command]
@@ -290,16 +317,17 @@ pub async fn install_modrinth_modpack(
     import_pack(
         state.client.clone(),
         state.store.clone(),
-        app,
+        Some(app),
         archive,
         None,
+        "",
     )
     .await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::safe_relative;
+    use super::{pack_relative, safe_relative};
 
     #[test]
     fn rejects_archive_traversal() {
@@ -307,5 +335,19 @@ mod tests {
         assert!(safe_relative("../options.txt").is_err());
         assert!(safe_relative("/absolute/file.jar").is_err());
         assert!(safe_relative("mods/../options.txt").is_err());
+    }
+
+    #[test]
+    fn extracts_overrides_with_archive_prefix() {
+        assert_eq!(
+            pack_relative("MonPack/overrides/config/a.cfg", "MonPack/"),
+            Some("config/a.cfg")
+        );
+        assert_eq!(
+            pack_relative("overrides/mods/a.jar", ""),
+            Some("mods/a.jar")
+        );
+        assert_eq!(pack_relative("MonPack/manifest.json", "MonPack/"), None);
+        assert_eq!(pack_relative("Other/overrides/a.cfg", "MonPack/"), None);
     }
 }

@@ -55,10 +55,7 @@ pub fn apply_performance_jvm(jvm: &mut Vec<String>, cores: Option<usize>) {
         .find(|argument| argument.starts_with("-Xmx"))
         .cloned();
     if let Some(xmx) = xmx {
-        if let Some(xms) = jvm
-            .iter_mut()
-            .find(|argument| argument.starts_with("-Xms"))
-        {
+        if let Some(xms) = jvm.iter_mut().find(|argument| argument.starts_with("-Xms")) {
             *xms = xmx.replacen("-Xmx", "-Xms", 1);
         }
     }
@@ -146,7 +143,8 @@ mod windows_tuning {
         fn CloseHandle(handle: Handle) -> i32;
         fn SetPriorityClass(handle: Handle, class: u32) -> i32;
         fn SetProcessAffinityMask(handle: Handle, mask: usize) -> i32;
-        fn SetProcessInformation(handle: Handle, class: i32, info: *const c_void, size: u32) -> i32;
+        fn SetProcessInformation(handle: Handle, class: i32, info: *const c_void, size: u32)
+            -> i32;
         fn GetLogicalProcessorInformationEx(
             relationship: u32,
             buffer: *mut c_void,
@@ -200,8 +198,8 @@ mod windows_tuning {
         let mut max_efficiency = 0u8;
         let mut cores: Vec<(u8, u16, usize)> = Vec::new();
         while offset + 8 <= length as usize {
-            let size = u32::from_ne_bytes(buffer.get(offset + 4..offset + 8)?.try_into().ok()?)
-                as usize;
+            let size =
+                u32::from_ne_bytes(buffer.get(offset + 4..offset + 8)?.try_into().ok()?) as usize;
             if size < 8 || offset + size > length as usize {
                 break;
             }
@@ -209,8 +207,7 @@ mod windows_tuning {
             let group_count =
                 u16::from_ne_bytes(buffer.get(offset + 30..offset + 32)?.try_into().ok()?);
             let first_mask =
-                u64::from_ne_bytes(buffer.get(offset + 32..offset + 40)?.try_into().ok()?)
-                    as usize;
+                u64::from_ne_bytes(buffer.get(offset + 32..offset + 40)?.try_into().ok()?) as usize;
             max_efficiency = max_efficiency.max(efficiency);
             cores.push((efficiency, group_count, first_mask));
             offset += size;
@@ -284,7 +281,9 @@ mod tests {
         apply_performance_jvm(&mut jvm, Some(8));
         assert!(jvm.iter().any(|argument| argument == "-XX:+UseG1GC"));
         assert!(jvm.iter().any(|argument| argument == "-Xms4096M"));
-        assert!(jvm.iter().any(|argument| argument == "-XX:ActiveProcessorCount=8"));
+        assert!(jvm
+            .iter()
+            .any(|argument| argument == "-XX:ActiveProcessorCount=8"));
         assert_eq!(
             jvm.iter()
                 .filter(|argument| argument.as_str() == "-XX:+UseG1GC")

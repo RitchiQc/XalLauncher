@@ -11,12 +11,13 @@ mod java;
 mod launch;
 mod loaders;
 mod models;
-mod modules;
 mod modpacks;
+mod modules;
 mod options;
 mod providers;
 mod servers;
 mod store;
+mod transfer;
 mod versions;
 
 use std::collections::HashMap;
@@ -76,6 +77,10 @@ pub fn run() {
             content::toggle_content,
             content::delete_content,
             content::import_content,
+            content::import_contents,
+            transfer::import::import_instance,
+            transfer::import::import_instance_folder,
+            transfer::export::export_instance,
             content::content_file_path,
             servers::list_servers,
             servers::upsert_server,

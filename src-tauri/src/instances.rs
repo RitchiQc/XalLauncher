@@ -3,7 +3,7 @@ use crate::models::{Instance, InstanceInput, Loader};
 use chrono::Utc;
 use std::fs;
 
-fn valid_version(value: &str) -> bool {
+pub(crate) fn valid_version(value: &str) -> bool {
     !value.is_empty()
         && value
             .chars()

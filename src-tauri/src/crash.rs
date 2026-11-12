@@ -128,7 +128,8 @@ pub fn analyze(instance_id: &str, text: &str, crash_file: Option<String>) -> Cra
             id: "install".into(),
             title: "Installation corrompue".into(),
             detail: "Le classpath ou un fichier du jeu est introuvable ou corrompu.".into(),
-            action: "Relancez l’instance pour retélécharger les fichiers, ou recréez l’instance.".into(),
+            action: "Relancez l’instance pour retélécharger les fichiers, ou recréez l’instance."
+                .into(),
         });
     }
     if lower.contains("address already in use") {
@@ -144,7 +145,8 @@ pub fn analyze(instance_id: &str, text: &str, crash_file: Option<String>) -> Cra
             id: "unknown".into(),
             title: "Cause non identifiée".into(),
             detail: "Aucun motif connu n’a été détecté dans les journaux.".into(),
-            action: "Consultez l’extrait de journal ci-dessous et le rapport de crash complet.".into(),
+            action: "Consultez l’extrait de journal ci-dessous et le rapport de crash complet."
+                .into(),
         });
     }
 
@@ -224,7 +226,11 @@ mod tests {
 
     #[test]
     fn detects_memory_crash() {
-        let report = analyze("instance", "java.lang.OutOfMemoryError: Java heap space", None);
+        let report = analyze(
+            "instance",
+            "java.lang.OutOfMemoryError: Java heap space",
+            None,
+        );
         assert!(report.causes.iter().any(|cause| cause.id == "memory"));
         assert_eq!(report.severity, "error");
     }

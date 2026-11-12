@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Box, CircleStop, FolderOpen, Globe2, Image, Layers, Package, Pencil, Play, Puzzle, Save, Settings2, Sparkles, Terminal } from "lucide-react";
+import { ArrowLeft, Box, CircleStop, Download, FolderOpen, Globe2, Image, Layers, Package, Pencil, Play, Puzzle, Save, Settings2, Sparkles, Terminal } from "lucide-react";
 import { BackupPanel } from "@/components/BackupPanel";
 import { ContentPanel } from "@/components/ContentPanel";
+import { ExportInstanceDialog } from "@/components/ExportInstanceDialog";
 import { InstanceArtwork } from "@/components/InstanceArtwork";
 import { InstanceForm } from "@/components/InstanceForm";
 import { LogPanel } from "@/components/LogPanel";
@@ -31,6 +32,7 @@ export function InstanceDetailsPage() {
   const { instances, running, startGame, stopGame, progress, refreshInstances, setActiveInstanceId, perform } = useLauncher();
   const [tab, setTab] = useState("overview");
   const [editing, setEditing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [launching, setLaunching] = useState(false);
   const instance = instances.find((item) => item.id === id);
   if (!instance) return <div className="page"><h1>Instance introuvable</h1><Button onClick={() => navigate("/instances")}>Retour à la bibliothèque</Button></div>;
@@ -48,6 +50,7 @@ export function InstanceDetailsPage() {
     <button className="back-link" onClick={() => navigate("/instances")}><ArrowLeft size={16} />Bibliothèque</button>
     <section className="instance-detail-hero"><InstanceArtwork instance={instance} compact /><div className="detail-actions">
       <Button variant="secondary" onClick={() => setEditing(true)}><Pencil size={17} />Modifier</Button>
+      <Button variant="secondary" onClick={() => setExporting(true)}><Download size={17} />Exporter</Button>
       <Button variant="secondary" className="icon-button" title="Ouvrir le dossier" onClick={() => void perform(() => api.openFolder(instance.id))}><FolderOpen size={19} /></Button>
       {isRunning ? <Button variant="danger" onClick={() => void stopGame(instance.id)}><CircleStop size={19} />Arrêter</Button> : <Button onClick={() => void launch()} loading={launching}><Play size={19} fill="currentColor" />Jouer</Button>}
     </div></section>
@@ -59,5 +62,6 @@ export function InstanceDetailsPage() {
     {tab === "backups" ? <BackupPanel instanceId={instance.id} /> : null}
     {tab === "logs" ? <LogPanel instanceId={instance.id} /> : null}
     {editing ? <InstanceForm existing={instance} onClose={() => setEditing(false)} onSaved={saved} /> : null}
+    {exporting ? <ExportInstanceDialog instance={instance} onClose={() => setExporting(false)} /> : null}
   </div>;
 }

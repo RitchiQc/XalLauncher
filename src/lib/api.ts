@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus } from "@/types";
+import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus } from "@/types";
 
 export const api = {
   settings: () => invoke<AppSettings>("get_settings"),
@@ -27,10 +27,14 @@ export const api = {
   installProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_modrinth_project", { projectId, instanceId, versionId }),
   installModpack: (projectId: string) => invoke<Instance>("install_modrinth_modpack", { projectId }),
   importModpack: (path: string, name?: string) => invoke<Instance>("import_modrinth_pack", { path, name }),
+  importInstance: (path: string, name?: string) => invoke<ImportReport>("import_instance", { path, name }),
+  importInstanceFolder: (path: string, name?: string) => invoke<ImportReport>("import_instance_folder", { path, name }),
+  exportInstance: (id: string, destination: string, options: ExportOptions) => invoke<ExportReport>("export_instance", { id, destination, options }),
   content: (instanceId: string, kind: string) => invoke<ContentEntry[]>("list_content", { instanceId, kind }),
   toggleContent: (instanceId: string, kind: string, fileName: string) => invoke<ContentEntry>("toggle_content", { instanceId, kind, fileName }),
   deleteContent: (instanceId: string, kind: string, fileName: string) => invoke<void>("delete_content", { instanceId, kind, fileName }),
   importContent: (instanceId: string, kind: string, sourcePath: string) => invoke<ContentEntry>("import_content", { instanceId, kind, sourcePath }),
+  importContents: (instanceId: string, kind: string, sourcePaths: string[]) => invoke<ImportSummary>("import_contents", { instanceId, kind, sourcePaths }),
   contentPath: (instanceId: string, kind: string, fileName: string) => invoke<string>("content_file_path", { instanceId, kind, fileName }),
   servers: () => invoke<ServerEntry[]>("list_servers"),
   saveServer: (server: ServerEntry) => invoke<ServerEntry>("upsert_server", { server }),

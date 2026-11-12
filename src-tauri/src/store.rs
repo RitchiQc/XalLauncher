@@ -123,6 +123,15 @@ impl Store {
     }
 }
 
+#[cfg(test)]
+impl Store {
+    pub(crate) fn temporary(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+        }
+    }
+}
+
 #[tauri::command]
 pub fn get_settings(state: tauri::State<'_, crate::AppState>) -> Result<AppSettings> {
     state.store.settings()

@@ -1,10 +1,26 @@
 import type { SyntheticEvent } from "react";
+import type { ExportReport, ImportSummary } from "@/types";
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 o";
   const units = ["o", "Ko", "Mo", "Go", "To"];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** index).toFixed(index > 1 ? 1 : 0)} ${units[index]}`;
+}
+
+function plural(count: number, singular: string, plural: string): string {
+  return `${count} ${count > 1 ? plural : singular}`;
+}
+
+export function formatImportSummary(summary: ImportSummary): string {
+  const parts = [plural(summary.imported.length, "importé", "importés")];
+  if (summary.skipped.length) parts.push(plural(summary.skipped.length, "ignoré", "ignorés"));
+  if (summary.failed.length) parts.push(plural(summary.failed.length, "échec", "échecs"));
+  return parts.join(" · ");
+}
+
+export function formatExportReport(report: ExportReport): string {
+  return `${plural(report.files, "fichier", "fichiers")} · ${formatBytes(report.bytes)}`;
 }
 
 export function formatNumber(value: number): string {

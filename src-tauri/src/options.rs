@@ -109,22 +109,55 @@ mod tests {
         std::fs::write(&path, "renderDistance:12\nfov:0.5\n").unwrap();
         let mut entries = read(&path).unwrap();
         set(&mut entries, "renderDistance", "8".into());
-        assert_eq!(entries.iter().find(|(key, _)| key == "renderDistance").unwrap().1, "8");
-        assert_eq!(entries.iter().find(|(key, _)| key == "fov").unwrap().1, "0.5");
+        assert_eq!(
+            entries
+                .iter()
+                .find(|(key, _)| key == "renderDistance")
+                .unwrap()
+                .1,
+            "8"
+        );
+        assert_eq!(
+            entries.iter().find(|(key, _)| key == "fov").unwrap().1,
+            "0.5"
+        );
     }
 
     #[test]
     fn merges_resource_pack_lists() {
         let mut entries = vec![("resourcePacks".to_string(), "[\"vanilla\"]".to_string())];
-        ensure_list(&mut entries, "resourcePacks", "file/XalLauncher-Branding.zip").unwrap();
-        ensure_list(&mut entries, "resourcePacks", "file/XalLauncher-Branding.zip").unwrap();
+        ensure_list(
+            &mut entries,
+            "resourcePacks",
+            "file/XalLauncher-Branding.zip",
+        )
+        .unwrap();
+        ensure_list(
+            &mut entries,
+            "resourcePacks",
+            "file/XalLauncher-Branding.zip",
+        )
+        .unwrap();
         assert_eq!(
-            entries.iter().find(|(key, _)| key == "resourcePacks").unwrap().1,
+            entries
+                .iter()
+                .find(|(key, _)| key == "resourcePacks")
+                .unwrap()
+                .1,
             "[\"vanilla\",\"file/XalLauncher-Branding.zip\"]"
         );
-        remove_from_list(&mut entries, "resourcePacks", "file/XalLauncher-Branding.zip").unwrap();
+        remove_from_list(
+            &mut entries,
+            "resourcePacks",
+            "file/XalLauncher-Branding.zip",
+        )
+        .unwrap();
         assert_eq!(
-            entries.iter().find(|(key, _)| key == "resourcePacks").unwrap().1,
+            entries
+                .iter()
+                .find(|(key, _)| key == "resourcePacks")
+                .unwrap()
+                .1,
             "[\"vanilla\"]"
         );
     }

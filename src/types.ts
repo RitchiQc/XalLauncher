@@ -135,6 +135,35 @@ export interface ContentEntry {
   iconUrl?: string;
 }
 
+export interface ImportFailure {
+  fileName: string;
+  message: string;
+}
+
+export interface ImportSummary {
+  imported: ContentEntry[];
+  skipped: string[];
+  failed: ImportFailure[];
+}
+
+export interface ImportReport {
+  instance: Instance;
+  format: string;
+  importedFiles: number;
+  warnings: string[];
+}
+
+export interface ExportOptions {
+  includeWorlds: boolean;
+  includeScreenshots: boolean;
+}
+
+export interface ExportReport {
+  path: string;
+  files: number;
+  bytes: number;
+}
+
 export interface ProjectHit {
   projectId: string;
   slug: string;

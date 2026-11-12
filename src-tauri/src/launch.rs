@@ -565,8 +565,7 @@ pub async fn launch_instance(
             }
         }
     }
-    let performance_cores = if instance.modules.performance
-        && instance.modules.performance_affinity
+    let performance_cores = if instance.modules.performance && instance.modules.performance_affinity
     {
         crate::modules::performance_core_count()
     } else {

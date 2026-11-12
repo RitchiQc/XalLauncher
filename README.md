@@ -30,6 +30,9 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - RAM, arguments JVM, résolution, plein écran et serveur au démarrage par instance.
 - Classpaths longs via fichier d’arguments Java sur les runtimes compatibles.
 - Console en direct, journal local, arrêt du processus et temps de jeu.
+- Import d’instances Modrinth (`.mrpack`), Prism Launcher / MultiMC (`.zip` ou dossier) avec détection automatique du format, restauration des réglages Prism (RAM, serveur) et des réglages XalLauncher (`xallauncher.json`).
+- Export d’une instance en `.mrpack` autonome, réimportable dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App, avec inclusion facultative des mondes et des captures.
+- L’interface indique les formats supportés dans le dialogue d’import ; les formats non reconnus produisent un message explicite.
 
 ### Contenu
 
@@ -42,10 +45,25 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Identification des contenus et versions déjà installés dans l’explorateur, sans téléchargement redondant.
 - Téléchargements parallèles des mods et dépendances selon le nombre de tâches configuré, avec progression globale.
 - Installation de la dernière publication d’un modpack Modrinth et import de fichiers `.mrpack`.
-- Import, activation/désactivation et suppression de contenus locaux.
+- Import de contenus locaux **par lot** : plusieurs `.jar` ou `.zip` à la fois, ou glisser-déposer dans l’onglet Mods / Resource packs / Shaders.
+- Activation/désactivation et suppression de contenus locaux.
 - Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks, qui contiennent du code Java exécutable.
 - Liste des mondes et galerie des captures d’écran.
 - Sauvegardes ZIP des mondes, restauration sécurisée et sauvegarde automatique avant restauration.
+
+### Formats d’instances
+
+| Format | Extension | Import | Export |
+|---|---|---|---|
+| Modrinth | `.mrpack` | ✅ | ✅ (format d’export) |
+| Prism Launcher / MultiMC | `.zip` ou dossier | ✅ | — |
+| XalLauncher | `.mrpack` | ✅ | ✅ |
+
+- L’import détecte le format **par le contenu** de l’archive, pas par son extension.
+- Un pack exporté par XalLauncher contient `modrinth.index.json`, tous les fichiers dans `overrides/` et `xallauncher.json` (RAM, résolution, JVM, modules, serveur). Il se réimporte sans téléchargement dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App.
+- Les mondes et les captures sont exclus par défaut à l’export ; deux options permettent de les inclure.
+- **Formats non pris en charge** : CurseForge `.zip` (le téléchargement de ses mods exige une clé API CurseForge), ATLauncher, FTB, Technic et un dossier `.minecraft` brut. Pour un pack CurseForge, importez-le dans Prism Launcher, puis importez le dossier de l’instance Prism dans XalLauncher.
+- Le pack de branding XalLauncher, les journaux, les rapports de crash et les caches sont toujours exclus de l’export.
 
 ### Modules par instance
 
