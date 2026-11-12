@@ -13,6 +13,7 @@ export function SkinPreview({ skinUrl, capeUrl, model }: { skinUrl?: string; cap
     const viewer = new SkinViewer({ canvas: canvas.current, width: 300, height: 390, model: selected });
     viewer.animation = new IdleAnimation();
     viewer.camera.position.set(0, 0, 38);
+    viewer.playerWrapper.rotation.y = Math.PI;
     viewer.controls.enablePan = false;
     viewer.controls.enableZoom = false;
     viewer.loadSkin(skinUrl, { model: selected }).catch(() => setFailed(true));

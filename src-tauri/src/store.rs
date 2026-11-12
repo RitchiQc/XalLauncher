@@ -1,6 +1,5 @@
 use crate::error::{AppError, Result, ResultExt};
 use crate::models::{Account, AppSettings, BackupEntry, Instance, ServerEntry};
-use directories::ProjectDirs;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs;
@@ -14,10 +13,7 @@ pub struct Store {
 
 impl Store {
     pub fn new() -> Result<Self> {
-        let project = ProjectDirs::from("studio", "Xaltar", "XalLauncher").ok_or_else(|| {
-            AppError::new("Impossible de déterminer le dossier des données utilisateur")
-        })?;
-        let root = project.data_local_dir().to_path_buf();
+        let root = crate::storage::resolve_data_root()?;
         for path in [
             root.clone(),
             root.join("instances"),

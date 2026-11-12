@@ -5,6 +5,40 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+fn normalized(mut server: ServerEntry) -> Result<ServerEntry> {
+    if server.name.trim().is_empty() || server.address.trim().is_empty() {
+        return Err(AppError::new("Nom et adresse du serveur requis"));
+    }
+    server.name = server.name.trim().into();
+    server.address = server.address.trim().into();
+    if server.address.matches(':').count() > 1 {
+        return Err(AppError::new("Adresse du serveur invalide"));
+    }
+    if let Some((host, port)) = server.address.rsplit_once(':') {
+        let port: u16 = port
+            .parse()
+            .map_err(|_| AppError::new("Port du serveur invalide"))?;
+        let host = host.trim();
+        if host.is_empty() {
+            return Err(AppError::new("Adresse du serveur invalide"));
+        }
+        server.address = host.into();
+        server.port = port;
+    }
+    if server.address.len() > 255
+        || server
+            .address
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return Err(AppError::new("Adresse du serveur invalide"));
+    }
+    if server.port == 0 {
+        return Err(AppError::new("Port du serveur invalide"));
+    }
+    Ok(server)
+}
+
 #[tauri::command]
 pub fn list_servers(state: tauri::State<'_, crate::AppState>) -> Result<Vec<ServerEntry>> {
     state.store.servers()
@@ -12,17 +46,13 @@ pub fn list_servers(state: tauri::State<'_, crate::AppState>) -> Result<Vec<Serv
 
 #[tauri::command]
 pub fn upsert_server(
-    mut server: ServerEntry,
+    server: ServerEntry,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ServerEntry> {
-    if server.name.trim().is_empty() || server.address.trim().is_empty() {
-        return Err(AppError::new("Nom et adresse du serveur requis"));
-    }
+    let mut server = normalized(server)?;
     if server.id.is_empty() {
         server.id = uuid::Uuid::new_v4().to_string();
     }
-    server.name = server.name.trim().into();
-    server.address = server.address.trim().into();
     let mut servers = state.store.servers()?;
     if let Some(existing) = servers.iter_mut().find(|item| item.id == server.id) {
         *existing = server.clone();
@@ -95,6 +125,23 @@ fn chat_text(value: &Value) -> String {
 
 #[tauri::command]
 pub async fn query_server(server: ServerEntry) -> Result<ServerStatus> {
+    let original = server.clone();
+    let server = match normalized(server) {
+        Ok(server) => server,
+        Err(error) => {
+            return Ok(ServerStatus {
+                online: false,
+                latency: None,
+                online_players: None,
+                max_players: None,
+                motd: None,
+                version: None,
+                icon: None,
+                error: Some(error.to_string()),
+                server: original,
+            })
+        }
+    };
     let result = tokio::time::timeout(Duration::from_secs(6), status_request(&server)).await;
     match result {
         Ok(Ok((json, latency))) => Ok(ServerStatus {
@@ -180,7 +227,29 @@ fn read_cursor_varint(cursor: &mut std::io::Cursor<Vec<u8>>) -> Result<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{packet, read_cursor_varint};
+    use super::{normalized, packet, read_cursor_varint};
+    use crate::models::ServerEntry;
+
+    fn entry(address: &str) -> ServerEntry {
+        ServerEntry {
+            id: String::new(),
+            name: "Test".into(),
+            address: address.into(),
+            port: 25565,
+            instance_id: None,
+        }
+    }
+
+    #[test]
+    fn normalizes_server_addresses() {
+        let server = normalized(entry("play.example.fr:25566")).unwrap();
+        assert_eq!(server.name, "Test");
+        assert_eq!(server.address, "play.example.fr");
+        assert_eq!(server.port, 25566);
+        assert!(normalized(entry("play.example.fr:bad")).is_err());
+        assert!(normalized(entry("2001:db8::1")).is_err());
+        assert!(normalized(entry("")).is_err());
+    }
 
     #[test]
     fn builds_and_reads_protocol_packets() {

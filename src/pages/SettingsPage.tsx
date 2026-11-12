@@ -1,10 +1,12 @@
-import { useState } from "react";
-import { Check, Download, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { Check, Download, FolderOpen, HardDrive, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
 import { Button, PageHeader, ProgressBar, Toggle } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
 import { confirmAction } from "@/lib/dialog";
 import { findUpdate } from "@/lib/updates";
 import { useLauncher } from "@/state/LauncherContext";
+import type { StorageInfo } from "@/types";
 
 const accents = ["#8b5cf6", "#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899"];
 
@@ -15,6 +17,9 @@ export function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState("");
   const [updateProgress, setUpdateProgress] = useState<number>();
   const [updating, setUpdating] = useState(false);
+  const [storage, setStorage] = useState<StorageInfo>();
+  const [storageBusy, setStorageBusy] = useState(false);
+  useEffect(() => { void api.storageInfo().then(setStorage).catch(() => undefined); }, []);
   const dirty = JSON.stringify(form) !== JSON.stringify(settings);
   function patch<K extends keyof typeof form>(key: K, value: (typeof form)[K]) { setForm((current) => ({ ...current, [key]: value })); }
   async function save() {
@@ -54,6 +59,20 @@ export function SettingsPage() {
     if (result !== undefined) setUpdateStatus("Installation terminée.");
     setUpdating(false);
   }
+  async function openStorage() {
+    await perform(() => api.openStorageFolder());
+  }
+  async function changeStorage(target?: string) {
+    const path = target ?? await open({ directory: true, multiple: false });
+    if (!path || Array.isArray(path)) return;
+    if (path === storage?.dataDirectory) return;
+    const migrate = await confirmAction("Reprendre les instances, mods et sauvegardes existants dans le nouveau dossier ? Choisissez Non pour démarrer avec un dossier vide.", "Changer l’emplacement des données", "info");
+    if (!migrate && !(await confirmAction("Le nouveau dossier démarrera vide. L’ancien dossier sera conservé. Continuer ?", "Confirmer", "warning"))) return;
+    setStorageBusy(true);
+    const result = await perform(() => api.changeStorageDirectory(path, migrate), "Emplacement des données mis à jour");
+    if (result) { setStorage(result); await api.restartApp(); }
+    setStorageBusy(false);
+  }
 
   return <div className="page settings-page"><PageHeader eyebrow="Personnalisation" title="Paramètres" description="Réglez XalLauncher selon votre machine et vos préférences." actions={<Button onClick={() => void save()} loading={saving} disabled={!dirty}><Save size={17} />Enregistrer</Button>} />
     <section className="settings-section panel"><header><Palette /><div><h2>Apparence</h2><p>Un environnement qui vous ressemble, sans nuire à la lisibilité.</p></div></header><div className="settings-body">
@@ -62,6 +81,10 @@ export function SettingsPage() {
       <Toggle checked={form.reducedMotion} onChange={(value) => patch("reducedMotion", value)} label="Réduire les animations et transitions" />
     </div></section>
     <section className="settings-section panel"><header><Download /><div><h2>Téléchargements</h2><p>Contrôlez la charge réseau pendant l’installation du jeu et des contenus.</p></div></header><div className="settings-body"><label className="setting-row"><span><strong>Tâches simultanées</strong><small>Entre 1 et 32 téléchargements parallèles.</small></span><div className="number-control"><input type="range" min={1} max={32} value={form.downloadConcurrency} onChange={(event) => patch("downloadConcurrency", Number(event.target.value))} /><strong>{form.downloadConcurrency}</strong></div></label></div></section>
+    <section className="settings-section panel"><header><HardDrive /><div><h2>Stockage</h2><p>Choisissez le dossier des instances, téléchargements et sauvegardes.</p></div></header><div className="settings-body">
+      <div className="setting-row"><span><strong>Dossier des données</strong><small className="storage-path">{storage?.dataDirectory ?? "Chargement…"}</small><small>Le dossier choisi dans l’installeur ne concerne que les fichiers du programme.</small></span><div className="storage-actions"><Button variant="secondary" onClick={() => void openStorage()} disabled={!storage}><FolderOpen size={16} />Ouvrir</Button><Button onClick={() => void changeStorage()} loading={storageBusy} disabled={!storage}>Changer…</Button></div></div>
+      {storage && storage.installDataDirectory !== storage.dataDirectory ? <div className="setting-row"><span><strong>Dossier d’installation</strong><small className="storage-path">{storage.installDataDirectory}</small></span><Button variant="secondary" onClick={() => void changeStorage(storage.installDataDirectory)} disabled={storageBusy}>Utiliser</Button></div> : null}
+    </div></section>
     <section className="settings-section panel"><header><KeyRound /><div><h2>Authentification Microsoft</h2><p>Identifiant public de votre application Microsoft Entra.</p></div></header><div className="settings-body"><label className="field"><span>Application (client) ID</span><input value={form.microsoftClientId} onChange={(event) => patch("microsoftClientId", event.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /><small>Activez « Autoriser le flux de code d’appareil » pour cette application publique. Aucun secret client n’est stocké.</small></label></div></section>
     <section className="settings-section panel"><header><RefreshCw /><div><h2>Mises à jour du launcher</h2><p>Packages vérifiés par signature avant installation.</p></div></header><div className="settings-body"><Toggle checked={form.autoUpdate} onChange={(value) => patch("autoUpdate", value)} label="Rechercher les nouvelles versions au démarrage" /><div className="setting-row"><span><strong>Canal stable</strong><small>{updateStatus || "Vérifiez manuellement les Releases GitHub."}</small></span><Button variant="secondary" onClick={() => void checkUpdate()} loading={updating} disabled={updating}><RefreshCw size={16} />Vérifier</Button></div>{updateProgress !== undefined ? <ProgressBar value={updateProgress} label="Mise à jour" /> : null}</div></section>
     <section className="settings-section panel about-section"><header><MonitorCog /><div><h2>À propos</h2><p>XalLauncher {__APP_VERSION__} · Windows</p></div></header><div className="settings-body"><p>Développé par <strong>Xaltar Studio</strong> avec Tauri, React et Rust. Minecraft est une marque de Mojang Synergies AB. XalLauncher n’est pas affilié à Mojang ou Microsoft.</p></div></section>

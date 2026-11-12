@@ -16,6 +16,7 @@ mod modules;
 mod options;
 mod providers;
 mod servers;
+mod storage;
 mod store;
 mod transfer;
 mod versions;
@@ -23,6 +24,7 @@ mod versions;
 use std::collections::HashMap;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 pub struct AppState {
     pub store: store::Store,
@@ -50,8 +52,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
+        .setup(|app| {
+            let root = app.state::<AppState>().store.root().to_path_buf();
+            let _ = app.asset_protocol_scope().allow_directory(root, true);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             store::get_settings,
+            storage::storage_info,
+            storage::change_storage_directory,
+            storage::open_storage_folder,
+            storage::restart_app,
             store::update_settings,
             auth::list_accounts,
             auth::begin_microsoft_login,
@@ -66,6 +77,8 @@ pub fn run() {
             instances::duplicate_instance,
             instances::delete_instance,
             instances::open_instance_folder,
+            instances::set_instance_icon,
+            instances::instance_icon_path,
             launch::launch_instance,
             launch::stop_game,
             launch::running_games,

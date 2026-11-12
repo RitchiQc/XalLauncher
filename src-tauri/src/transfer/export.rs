@@ -319,6 +319,8 @@ mod tests {
             java_path: None,
             jvm_arguments: String::new(),
             server_address: None,
+            icon_url: None,
+            icon_file: None,
             modules: ModuleState::default(),
             created_at: Utc::now(),
             last_played_at: None,

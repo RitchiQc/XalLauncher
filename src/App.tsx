@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Box, ChevronDown, CloudDownload, Home, Library, Server, Settings, UserRound } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 import { PlayerHead } from "@/components/PlayerHead";
+import { StorageSetupDialog } from "@/components/StorageSetupDialog";
 import { LoadingScreen, ProgressBar, Toasts } from "@/components/UI";
+import { api } from "@/lib/api";
 import { loaderLabels } from "@/lib/format";
 import { AccountsPage } from "@/pages/AccountsPage";
 import { HomePage } from "@/pages/HomePage";
@@ -11,6 +14,7 @@ import { InstancesPage } from "@/pages/InstancesPage";
 import { ServersPage } from "@/pages/ServersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { useLauncher } from "@/state/LauncherContext";
+import type { StorageInfo } from "@/types";
 
 const navigation = [
   { to: "/", label: "Accueil", icon: Home, end: true },
@@ -25,6 +29,10 @@ export default function App() {
   const { ready, accounts, activeAccount, activeAccountId, setActiveAccountId, activeInstance, instances, activeInstanceId, setActiveInstanceId, progress } = useLauncher();
   const location = useLocation();
   const navigate = useNavigate();
+  const [storageInfo, setStorageInfo] = useState<StorageInfo>();
+  useEffect(() => {
+    void api.storageInfo().then((info) => { if (!info.configured) setStorageInfo(info); }).catch(() => undefined);
+  }, []);
   if (!ready) return <LoadingScreen />;
   const title = location.pathname.startsWith("/instances/") ? "Détail de l’instance" : titles[location.pathname] ?? "XalLauncher";
 
@@ -43,5 +51,6 @@ export default function App() {
       <main className="content"><Routes><Route path="/" element={<HomePage />} /><Route path="/instances" element={<InstancesPage />} /><Route path="/instances/:id" element={<InstanceDetailsPage />} /><Route path="/explore" element={<Navigate to="/instances" replace />} /><Route path="/servers" element={<ServersPage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></main>
     </div>
     <Toasts />
+    {storageInfo ? <StorageSetupDialog info={storageInfo} onClose={() => setStorageInfo(undefined)} /> : null}
   </div>;
 }

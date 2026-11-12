@@ -1,9 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus } from "@/types";
+import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
 
 export const api = {
   settings: () => invoke<AppSettings>("get_settings"),
   saveSettings: (settings: AppSettings) => invoke<AppSettings>("update_settings", { settings }),
+  storageInfo: () => invoke<StorageInfo>("storage_info"),
+  changeStorageDirectory: (path: string, migrate: boolean) => invoke<StorageInfo>("change_storage_directory", { path, migrate }),
+  openStorageFolder: () => invoke<void>("open_storage_folder"),
+  restartApp: () => invoke<void>("restart_app"),
   accounts: () => invoke<Account[]>("list_accounts"),
   login: (clientId: string) => invoke<Account>("begin_microsoft_login", { clientId }),
   removeAccount: (accountId: string) => invoke<Account[]>("remove_account", { accountId }),
@@ -17,6 +21,8 @@ export const api = {
   duplicateInstance: (id: string) => invoke<Instance>("duplicate_instance", { id }),
   deleteInstance: (id: string, deleteFiles: boolean) => invoke<Instance[]>("delete_instance", { id, deleteFiles }),
   openFolder: (id: string) => invoke<void>("open_instance_folder", { id }),
+  setInstanceIcon: (id: string, sourcePath: string | null) => invoke<Instance>("set_instance_icon", { id, sourcePath }),
+  instanceIconPath: (id: string) => invoke<string | null>("instance_icon_path", { id }),
   launch: (id: string, accountId: string, serverOverride?: string) => invoke<LaunchResult>("launch_instance", { id, accountId, serverOverride }),
   stop: (id: string) => invoke<void>("stop_game", { id }),
   running: () => invoke<string[]>("running_games"),

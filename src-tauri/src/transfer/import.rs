@@ -596,6 +596,8 @@ fn build_instance(
         server_address: config.server_address.filter(|value| {
             !value.is_empty() && value.len() <= 255 && !value.chars().any(char::is_control)
         }),
+        icon_url: None,
+        icon_file: None,
         modules: ModuleState::default(),
         created_at: Utc::now(),
         last_played_at: None,

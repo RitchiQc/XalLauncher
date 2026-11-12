@@ -103,6 +103,8 @@ pub(crate) async fn import_pack(
         java_path: None,
         jvm_arguments: String::new(),
         server_address: None,
+        icon_url: None,
+        icon_file: None,
         modules: Default::default(),
         created_at: Utc::now(),
         last_played_at: None,
@@ -314,7 +316,7 @@ pub async fn install_modrinth_modpack(
             checksum.name()
         )));
     }
-    import_pack(
+    let mut instance = import_pack(
         state.client.clone(),
         state.store.clone(),
         Some(app),
@@ -322,7 +324,19 @@ pub async fn install_modrinth_modpack(
         None,
         "",
     )
-    .await
+    .await?;
+    if let Some(icon) = project["icon_url"]
+        .as_str()
+        .filter(|value| value.starts_with("https://"))
+    {
+        instance.icon_url = Some(icon.to_string());
+        let mut instances = state.store.instances()?;
+        if let Some(stored) = instances.iter_mut().find(|item| item.id == instance.id) {
+            stored.icon_url = instance.icon_url.clone();
+        }
+        state.store.save_instances(&instances)?;
+    }
+    Ok(instance)
 }
 
 #[cfg(test)]

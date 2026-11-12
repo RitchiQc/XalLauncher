@@ -72,6 +72,8 @@ export interface Instance {
   javaPath?: string;
   jvmArguments: string;
   serverAddress?: string;
+  iconUrl?: string;
+  iconFile?: string;
   modules?: ModuleState;
   createdAt: string;
   lastPlayedAt?: string;
@@ -121,6 +123,16 @@ export interface AppSettings {
   microsoftClientId: string;
   discordEnabled: boolean;
   autoUpdate: boolean;
+}
+
+export interface StorageInfo {
+  dataDirectory: string;
+  installDirectory: string;
+  installDataDirectory: string;
+  defaultDirectory: string;
+  configured: boolean;
+  hasExistingData: boolean;
+  instanceCount: number;
 }
 
 export interface ContentEntry {

@@ -407,6 +407,67 @@ fn collect_arguments(profiles: &[Value], section: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn quick_play_supported(profiles: &[Value]) -> bool {
+    profiles.iter().any(|profile| {
+        profile["arguments"]["game"]
+            .as_array()
+            .map(|arguments| {
+                arguments
+                    .iter()
+                    .any(|argument| match argument.get("value") {
+                        Some(Value::String(value)) => value == "--quickPlayMultiplayer",
+                        Some(Value::Array(values)) => values
+                            .iter()
+                            .any(|value| value.as_str() == Some("--quickPlayMultiplayer")),
+                        _ => false,
+                    })
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn normalize_server(value: &str) -> Result<(String, u16)> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > 255
+        || value
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+        || value.matches(':').count() > 1
+    {
+        return Err(AppError::new("Adresse de serveur invalide"));
+    }
+    let (host, port) = match value.rsplit_once(':') {
+        Some((host, port)) => (
+            host.trim(),
+            port.parse::<u16>()
+                .map_err(|_| AppError::new("Port de serveur invalide"))?,
+        ),
+        None => (value, 25565),
+    };
+    if host.is_empty() || port == 0 {
+        return Err(AppError::new("Adresse de serveur invalide"));
+    }
+    Ok((host.to_string(), port))
+}
+
+fn server_arguments(server: &str, quick_play: bool) -> Result<Vec<String>> {
+    let (host, port) = normalize_server(server)?;
+    if quick_play {
+        Ok(vec![
+            "--quickPlayMultiplayer".into(),
+            format!("{host}:{port}"),
+        ])
+    } else {
+        Ok(vec![
+            "--server".into(),
+            host,
+            "--port".into(),
+            port.to_string(),
+        ])
+    }
+}
+
 #[tauri::command]
 pub async fn launch_instance(
     id: String,
@@ -591,6 +652,7 @@ pub async fn launch_instance(
         .iter()
         .map(|argument| substitute(argument, &values))
         .collect::<Vec<_>>();
+    game.retain(|argument| !argument.starts_with("--quickPlay"));
     if !instance.fullscreen {
         game.extend([
             "--width".into(),
@@ -602,19 +664,10 @@ pub async fn launch_instance(
         game.push("--fullscreen".into());
     }
     if let Some(server) = server_override
-        .as_ref()
-        .or(instance.server_address.as_ref())
+        .as_deref()
+        .or(instance.server_address.as_deref())
     {
-        let (host, port) = server
-            .rsplit_once(':')
-            .and_then(|(host, port)| port.parse::<u16>().ok().map(|port| (host, port)))
-            .unwrap_or((server.as_str(), 25565));
-        game.extend([
-            "--server".into(),
-            host.into(),
-            "--port".into(),
-            port.to_string(),
-        ]);
+        game.extend(server_arguments(server, quick_play_supported(&profiles))?);
     }
 
     let argument_file = state.store.instance_dir(&id).join("jvm-args.txt");
@@ -830,7 +883,9 @@ pub fn read_instance_log(id: String, state: tauri::State<'_, crate::AppState>) -
 
 #[cfg(test)]
 mod tests {
-    use super::{rules_allow, substitute, validate_artifact_path};
+    use super::{
+        quick_play_supported, rules_allow, server_arguments, substitute, validate_artifact_path,
+    };
     use serde_json::json;
 
     #[test]
@@ -859,5 +914,39 @@ mod tests {
             substitute("--username ${player}", &values),
             "--username Xaltar"
         );
+    }
+
+    #[test]
+    fn detects_quick_play_support() {
+        let legacy = vec![json!({"arguments": {"game": ["--username", "${auth_player_name}"]}})];
+        assert!(!quick_play_supported(&legacy));
+        let modern = vec![json!({
+            "arguments": {
+                "game": [{
+                    "rules": [{"action": "allow", "features": {"is_quick_play_multiplayer": true}}],
+                    "value": ["--quickPlayMultiplayer", "${quickPlayMultiplayer}"]
+                }]
+            }
+        })];
+        assert!(quick_play_supported(&modern));
+    }
+
+    #[test]
+    fn builds_server_arguments_for_both_protocols() {
+        assert_eq!(
+            server_arguments("play.example.fr:25565", true).unwrap(),
+            vec!["--quickPlayMultiplayer", "play.example.fr:25565"]
+        );
+        assert_eq!(
+            server_arguments("play.example.fr", true).unwrap(),
+            vec!["--quickPlayMultiplayer", "play.example.fr:25565"]
+        );
+        assert_eq!(
+            server_arguments("play.example.fr:25566", false).unwrap(),
+            vec!["--server", "play.example.fr", "--port", "25566"]
+        );
+        assert!(server_arguments("play.example.fr:25565:25565", true).is_err());
+        assert!(server_arguments("play.example.fr:0", true).is_err());
+        assert!(server_arguments("", true).is_err());
     }
 }

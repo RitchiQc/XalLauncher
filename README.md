@@ -12,7 +12,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Vérification de la possession de Minecraft: Java Edition.
 - Plusieurs comptes, changement de compte actif et renouvellement de session.
 - Jetons conservés dans le **Coffre d’identification Windows** (backend `windows-native` de `keyring`, secret découpé en segments pour respecter la limite de 2 560 octets par entrée), jamais dans `settings.json`.
-- Profil, skin avec aperçu 3D, liste des capes possédées, activation et masquage d’une cape officielle. Les textures officielles sont forcées en HTTPS pour que l’aperçu 3D et les capes se chargent réellement.
+- Profil, skin avec aperçu 3D **orienté dos par défaut** pour mettre la cape en valeur, tout en restant tournable à la souris. Liste des capes possédées, activation et masquage d’une cape officielle. Les textures officielles sont forcées en HTTPS pour que l’aperçu 3D et les capes se chargent réellement.
 - Têtes de joueur dessinées directement depuis la texture officielle du skin (visage + chapeau), sans dépendre de Crafatar ou mc-heads. Le cadrage est calculé sur les dimensions réelles de la texture (64×32, 64×64 et skins HD), jamais sur une taille supposée.
 - Si la texture officielle est indisponible, repli sur mc-heads puis Crafatar, et enfin sur une vignette à l’initiale du pseudo : plus jamais de carré noir.
 - Vignettes de capes découpées sur la **face extérieure réelle** de la texture (colonnes 1-10, lignes 1-16), en 64×32 comme en legacy 22×17, avec mise à l’échelle calculée sur les dimensions de l’image.
@@ -28,6 +28,9 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Reprise des téléchargements, tentatives automatiques et vérification SHA-1, SHA-256 ou SHA-512 selon les métadonnées disponibles.
 - Java Temurin vérifié par SHA-256 ; empreinte locale de `java.exe` contrôlée avant chaque lancement.
 - RAM, arguments JVM, résolution, plein écran et serveur au démarrage par instance.
+- Connexion directe à un serveur au lancement : `--quickPlayMultiplayer` sur Minecraft 1.20+, avec repli sur `--server` / `--port` pour les versions antérieures.
+- Image de couverture par instance : icône Modrinth automatique pour les modpacks installés depuis le catalogue, image personnelle (PNG, JPEG ou WebP) importable depuis la page de l’instance, couverture spatiale par défaut issue du panorama XalLauncher et logo XalLauncher en repli.
+- Dossier de données configurable (instances, bibliothèques, assets, runtimes, journaux, sauvegardes) avec déplacement des données existantes et redémarrage automatique.
 - Classpaths longs via fichier d’arguments Java sur les runtimes compatibles.
 - Console en direct, journal local, arrêt du processus et temps de jeu.
 - Import d’instances Modrinth (`.mrpack`), Prism Launcher / MultiMC (`.zip` ou dossier) avec détection automatique du format, restauration des réglages Prism (RAM, serveur) et des réglages XalLauncher (`xallauncher.json`).
@@ -44,7 +47,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Installation des dépendances obligatoires, respect de leurs éventuelles versions imposées et remplacement des anciennes versions d’un projet.
 - Identification des contenus et versions déjà installés dans l’explorateur, sans téléchargement redondant.
 - Téléchargements parallèles des mods et dépendances selon le nombre de tâches configuré, avec progression globale.
-- Installation de la dernière publication d’un modpack Modrinth et import de fichiers `.mrpack`.
+- Installation de la dernière publication d’un modpack Modrinth (avec récupération de l’icône du projet) et import de fichiers `.mrpack`.
 - Import de contenus locaux **par lot** : plusieurs `.jar` ou `.zip` à la fois, ou glisser-déposer dans l’onglet Mods / Resource packs / Shaders.
 - Activation/désactivation et suppression de contenus locaux.
 - Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks, qui contiennent du code Java exécutable.
@@ -82,10 +85,20 @@ Chaque instance possède un onglet **Modules**. Les réglages sont appliqués au
 ### Multijoueur et application
 
 - Serveurs favoris avec statut réel, MOTD, version, joueurs et latence.
-- Association d’un serveur à une instance et lancement rapide.
+- Association d’un serveur à une instance et lancement rapide, avec connexion directe via Quick Play sur Minecraft 1.20+.
 - Thèmes sombre, clair et **Espace** (nébuleuses animées et étoiles scintillantes), accents, animations réductibles et centre de progression.
 - Recherche manuelle ou automatique de mises à jour signées via GitHub Releases (le dépôt ou l’hébergement du manifeste doit être accessible publiquement). L’installation n’est lancée qu’après une confirmation native ; sous Windows, le launcher se ferme volontairement lorsque l’installeur démarre, puis redémarre à la fin.
 - Interface actuellement en français.
+
+## Stockage et emplacement des données
+
+- Le dossier choisi dans l’installeur NSIS ne concerne que les fichiers du programme (`XalLauncher.exe`, DLL et ressources). Les données du jeu sont stockées séparément.
+- Les nouvelles installations utilisent par défaut `<dossier d’installation>\data` lorsque ce dossier est inscriptible ; sinon, `%LOCALAPPDATA%\Xaltar\XalLauncher\data` reste utilisé.
+- Les installations existantes conservent leur dossier AppData. Au premier démarrage après mise à jour, XalLauncher propose de déplacer les données vers le dossier d’installation.
+- Le chemin choisi est enregistré dans `%APPDATA%\Xaltar\XalLauncher\config\storage.json`.
+- **Paramètres → Stockage** permet d’ouvrir le dossier, de le changer et de reprendre les instances, mods, bibliothèques, assets, runtimes, journaux et sauvegardes. Les chemins absolus des sauvegardes sont réécrits pendant le transfert ; l’ancien dossier est conservé par sécurité, notamment lors d’une copie entre disques.
+- Le changement d’emplacement redémarre XalLauncher. Un jeu en cours bloque l’opération.
+- Les captures d’écran et les images de couverture locales restent affichables quel que soit le dossier choisi, car le protocole `asset` autorise dynamiquement le dossier de données au démarrage.
 
 ## Démarrage du développement
 
@@ -189,6 +202,7 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src-tauri/src/modpacks.rs` : archives `.mrpack`.
 - `src-tauri/src/backup.rs` : sauvegardes des mondes.
 - `src-tauri/src/servers.rs` : protocole Server List Ping.
+- `src-tauri/src/storage.rs` : dossier de données, configuration et migration.
 - `src-tauri/src/modules.rs` : module Performance (JVM, `options.txt`, priorité/EcoQoS, affinité P-cores).
 - `src-tauri/src/branding.rs` : écriture du resource pack XalLauncher à partir du panorama pré-calculé.
 - `src-tauri/examples/bake_branding.rs` : rendu hors-ligne du panorama (volume 256³, raymarching, poussière, bloom, dithering) vers `src-tauri/assets/branding/`.
@@ -203,6 +217,7 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - Le canal de mise à jour lit `latest.json` sans authentification : le dépôt (ou l’hébergement du manifeste) doit être public, sinon la vérification échoue.
 - Essential n’a pas d’intégration dédiée ; il reste installable comme un mod Modrinth ordinaire.
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.
+- Les images de couverture d’instance (personnalisées ou récupérées depuis Modrinth) restent locales et ne sont pas incluses dans les exports `.mrpack`.
 - Le module Performance n’installe aucun mod : il agit uniquement sur la JVM, `options.txt` et le processus Windows.
 - Le Branding est un resource pack (menu, splashs, icône, titre) ; l’écran de chargement et l’icône de fenêtre 100 % personnalisés nécessiteraient un mod compagnon, non inclus.
 - Le panorama de branding pèse environ 26 Mo de PNG embarqués (~4 à 5 Mo par face), et chaque instance reçoit sa propre copie du pack. Modifier le panorama impose de relancer `bake_branding` puis de reconstruire l’application.

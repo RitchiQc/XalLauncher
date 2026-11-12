@@ -68,6 +68,10 @@ pub struct Instance {
     #[serde(default)]
     pub server_address: Option<String>,
     #[serde(default)]
+    pub icon_url: Option<String>,
+    #[serde(default)]
+    pub icon_file: Option<String>,
+    #[serde(default)]
     pub modules: ModuleState,
     pub created_at: DateTime<Utc>,
     #[serde(default)]

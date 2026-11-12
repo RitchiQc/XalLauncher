@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Box, CircleStop, Download, FolderOpen, Globe2, Image, Layers, Package, Pencil, Play, Puzzle, Save, Settings2, Sparkles, Terminal } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ArrowLeft, Box, CircleStop, Download, FolderOpen, Globe2, Image, Layers, Package, Pencil, Play, Puzzle, RotateCcw, Save, Settings2, Sparkles, Terminal } from "lucide-react";
 import { BackupPanel } from "@/components/BackupPanel";
 import { ContentPanel } from "@/components/ContentPanel";
 import { ExportInstanceDialog } from "@/components/ExportInstanceDialog";
@@ -10,6 +11,7 @@ import { LogPanel } from "@/components/LogPanel";
 import { ModulesPanel } from "@/components/ModulesPanel";
 import { Button, ProgressBar } from "@/components/UI";
 import { api } from "@/lib/api";
+import { confirmAction } from "@/lib/dialog";
 import { formatDuration } from "@/lib/format";
 import { useLauncher } from "@/state/LauncherContext";
 import type { Instance } from "@/types";
@@ -42,6 +44,19 @@ export function InstanceDetailsPage() {
     if (!instance) return;
     setLaunching(true); await startGame(instance.id); setLaunching(false);
   }
+  async function changeIcon() {
+    if (!instance) return;
+    const selection = await open({ multiple: false, filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+    if (!selection || Array.isArray(selection)) return;
+    const result = await perform(() => api.setInstanceIcon(instance.id, selection), "Image de l'instance mise à jour");
+    if (result) await refreshInstances();
+  }
+  async function resetIcon() {
+    if (!instance) return;
+    if (!(await confirmAction("Réinitialiser l'image de cette instance ?", "Image de l'instance", "info"))) return;
+    const result = await perform(() => api.setInstanceIcon(instance.id, null), "Image réinitialisée");
+    if (result) await refreshInstances();
+  }
   function saved(updated: Instance) {
     void refreshInstances(); setEditing(false); setActiveInstanceId(updated.id);
   }
@@ -52,6 +67,8 @@ export function InstanceDetailsPage() {
       <Button variant="secondary" onClick={() => setEditing(true)}><Pencil size={17} />Modifier</Button>
       <Button variant="secondary" onClick={() => setExporting(true)}><Download size={17} />Exporter</Button>
       <Button variant="secondary" className="icon-button" title="Ouvrir le dossier" onClick={() => void perform(() => api.openFolder(instance.id))}><FolderOpen size={19} /></Button>
+      <Button variant="secondary" className="icon-button" title="Changer l'image de l'instance" onClick={() => void changeIcon()}><Image size={19} /></Button>
+      {instance.iconFile || instance.iconUrl ? <Button variant="secondary" className="icon-button" title="Réinitialiser l'image" onClick={() => void resetIcon()}><RotateCcw size={18} /></Button> : null}
       {isRunning ? <Button variant="danger" onClick={() => void stopGame(instance.id)}><CircleStop size={19} />Arrêter</Button> : <Button onClick={() => void launch()} loading={launching}><Play size={19} fill="currentColor" />Jouer</Button>}
     </div></section>
     {progress?.operation === "launch" ? <ProgressBar label={progress.label} value={progress.total ? progress.current / progress.total * 100 : 0} /> : null}
