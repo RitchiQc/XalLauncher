@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
+import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, LoginMode, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
 
 export const api = {
   settings: () => invoke<AppSettings>("get_settings"),
@@ -9,7 +9,9 @@ export const api = {
   openStorageFolder: () => invoke<void>("open_storage_folder"),
   restartApp: () => invoke<void>("restart_app"),
   accounts: () => invoke<Account[]>("list_accounts"),
-  login: (clientId: string) => invoke<Account>("begin_microsoft_login", { clientId }),
+  login: (clientId: string, mode: LoginMode = "device") => invoke<Account>("begin_microsoft_login", { clientId, mode }),
+  cancelLogin: () => invoke<void>("cancel_microsoft_login"),
+  openPrivate: (url: string) => invoke<boolean>("open_url_private", { url }),
   removeAccount: (accountId: string) => invoke<Account[]>("remove_account", { accountId }),
   refreshAccount: (accountId: string) => invoke<Account>("refresh_account", { accountId }),
   setCape: (accountId: string, capeId: string | null) => invoke<Account>("set_active_cape", { accountId, capeId }),

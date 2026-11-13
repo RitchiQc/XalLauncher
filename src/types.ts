@@ -1,4 +1,5 @@
 export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge";
+export type LoginMode = "device" | "browser";
 export type ContentKind = "mod" | "resourcepack" | "shader" | "world";
 export type Theme = "dark" | "light" | "space";
 export type SearchIndex = "relevance" | "downloads" | "follows" | "newest" | "updated";

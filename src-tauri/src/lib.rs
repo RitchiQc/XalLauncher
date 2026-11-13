@@ -1,6 +1,7 @@
 mod auth;
 mod backup;
 mod branding;
+mod browser;
 mod content;
 mod crash;
 mod download;
@@ -23,6 +24,7 @@ mod versions;
 
 use std::collections::HashMap;
 use std::process::Child;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -30,6 +32,7 @@ pub struct AppState {
     pub store: store::Store,
     pub client: reqwest::Client,
     pub processes: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
+    pub auth_cancel: AtomicBool,
 }
 
 impl AppState {
@@ -38,6 +41,7 @@ impl AppState {
             store: store::Store::new().expect("Impossible d’initialiser le stockage XalLauncher"),
             client: http::client().expect("Impossible d’initialiser le client réseau"),
             processes: Arc::new(Mutex::new(HashMap::new())),
+            auth_cancel: AtomicBool::new(false),
         }
     }
 }
@@ -66,6 +70,8 @@ pub fn run() {
             store::update_settings,
             auth::list_accounts,
             auth::begin_microsoft_login,
+            auth::cancel_microsoft_login,
+            browser::open_url_private,
             auth::remove_account,
             auth::refresh_account,
             auth::set_active_cape,

@@ -8,7 +8,9 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 
 ### Comptes et capes
 
-- Connexion Microsoft par **device code**, puis Xbox Live, XSTS et Minecraft Services.
+- Connexion Microsoft par **device code** (mode par défaut) ou par **navigateur** (Authorization Code + PKCE avec `prompt=select_account` pour choisir explicitement le compte), puis Xbox Live, XSTS et Minecraft Services.
+- Aucun email ni mot de passe n’est demandé par XalLauncher : la saisie se fait uniquement sur la page officielle Microsoft. Le mode navigateur écoute la redirection sur `http://localhost:<port>` et nécessite l’URI `http://localhost` dans l’application Entra.
+- Ouverture du lien de code d’appareil en **navigation privée** (Edge, Chrome, Firefox, Brave, Vivaldi, Opera) pour éviter la réutilisation silencieuse d’un compte déjà connecté dans le navigateur.
 - Vérification de la possession de Minecraft: Java Edition.
 - Plusieurs comptes, changement de compte actif et renouvellement de session.
 - Jetons conservés dans le **Coffre d’identification Windows** (backend `windows-native` de `keyring`, secret découpé en segments pour respecter la limite de 2 560 octets par entrée), jamais dans `settings.json`.
@@ -145,8 +147,11 @@ npm.cmd run tauri build
 1. Ouvrez Microsoft Entra et créez une inscription d’application.
 2. Choisissez la prise en charge des **comptes personnels Microsoft**.
 3. Configurez l’application comme client public et activez le **flux de code d’appareil**.
-4. Copiez l’**Application (client) ID** dans `Paramètres > Authentification Microsoft`.
-5. Ajoutez ensuite un compte depuis `Comptes & capes`.
+4. Pour le **mode navigateur**, ouvrez `Authentification > Ajouter une plateforme > Applications mobiles et de bureau`, puis ajoutez l’URI de redirection **`http://localhost`** (sans port ni chemin) et enregistrez. Le port est ignoré par Microsoft pour les URI `localhost`.
+5. Copiez l’**Application (client) ID** dans `Paramètres > Authentification Microsoft`.
+6. Ajoutez ensuite un compte depuis `Comptes & capes`.
+
+Le mode navigateur ouvre directement la page Microsoft avec `prompt=select_account` : le sélecteur de comptes s’affiche toujours, y compris l’option « Utiliser un autre compte ». Il est proposé via le bouton **« Utiliser un autre compte Microsoft »** dans la fenêtre de connexion ; le code d’appareil reste le mode par défaut.
 
 L’identifiant public de l’application XalLauncher est intégré par défaut : les joueurs n’ont pas besoin de créer leur propre application Entra. Pour utiliser une autre inscription, remplace-le dans les paramètres ou définis `XAL_MICROSOFT_CLIENT_ID` à la compilation. Aucun secret client n’est utilisé.
 
@@ -158,6 +163,26 @@ npm.cmd run tauri build
 ```
 
 Pour les Releases GitHub, crée la **variable** de dépôt `XAL_MICROSOFT_CLIENT_ID` dans `Settings > Secrets and variables > Actions > Variables`. Le workflow de Release l’intégrera automatiquement comme valeur par défaut. Chaque joueur se connectera ensuite avec son propre compte Microsoft, sans créer sa propre application Entra.
+
+## Dépannage de la connexion Microsoft
+
+### Le navigateur réutilise le mauvais compte (code d’appareil)
+
+Microsoft peut ignorer le sélecteur de comptes et réutiliser la session déjà ouverte dans le navigateur. Trois solutions :
+
+1. Cliquer sur **« Utiliser un autre compte Microsoft »** dans la fenêtre de connexion : la page Microsoft s’ouvre avec `prompt=select_account` et propose tous les comptes ainsi que « Utiliser un autre compte ».
+2. Cliquer sur **« Navigation privée »** à côté du code d’appareil : le lien s’ouvre sans session Microsoft existante, ce qui force la saisie du bon email.
+3. Se déconnecter au préalable sur `https://login.live.com/logout.srf`, puis relancer la connexion.
+
+Si le message « Ce compte Microsoft ne possède pas Minecraft: Java Edition » apparaît, c’est que le compte sélectionné ne possède pas le jeu : utiliser le mode navigateur pour choisir l’email qui possède Minecraft.
+
+### Erreur AADSTS50011 dans le navigateur
+
+L’URI de redirection n’est pas reconnue par l’application Entra. Vérifier que **`http://localhost`** est bien enregistrée dans `Authentification > Applications mobiles et de bureau`, sans port ni chemin, et que la modification a été enregistrée. Attendre quelques minutes, puis réessayer. En attendant, le code d’appareil reste utilisable.
+
+### Aucun email ni mot de passe dans le launcher
+
+Microsoft ne permet pas la connexion par mot de passe direct pour les comptes personnels (ROPC interdit pour les comptes MSA, incompatible avec la double authentification et les passkeys). XalLauncher ne collecte donc jamais ces informations : toute la saisie se fait sur la page officielle Microsoft.
 
 ## Sécurité et jetons
 
