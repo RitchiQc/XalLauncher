@@ -64,6 +64,8 @@ pub struct Instance {
     #[serde(default)]
     pub java_path: Option<PathBuf>,
     #[serde(default)]
+    pub java_major: Option<u32>,
+    #[serde(default)]
     pub jvm_arguments: String,
     #[serde(default)]
     pub server_address: Option<String>,
@@ -104,6 +106,8 @@ pub struct InstanceInput {
     pub close_on_launch: bool,
     #[serde(default)]
     pub java_path: Option<PathBuf>,
+    #[serde(default)]
+    pub java_major: Option<u32>,
     #[serde(default)]
     pub jvm_arguments: String,
     #[serde(default)]

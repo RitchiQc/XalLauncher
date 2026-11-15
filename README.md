@@ -25,11 +25,12 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Instances isolées : mods, mondes, configurations et captures séparés.
 - Versions release et snapshots du manifeste officiel Mojang, avec source officielle de repli et nouvelle tentative en cas d’échec réseau.
 - Vanilla, Fabric, Quilt, Forge et NeoForge.
-- Détection de la version Java requise et installation automatique d’Eclipse Temurin.
+- Détection automatique de la version Java requise ou choix explicite de **Java 8, 11, 17, 21 ou 25** par instance, avec installation et vérification d’Eclipse Temurin.
 - Téléchargements HTTPS vérifiés du client, des bibliothèques, des natives et des assets.
 - Reprise des téléchargements, tentatives automatiques et vérification SHA-1, SHA-256 ou SHA-512 selon les métadonnées disponibles.
-- Java Temurin vérifié par SHA-256 ; empreinte locale de `java.exe` contrôlée avant chaque lancement.
-- RAM, arguments JVM, résolution, plein écran et serveur au démarrage par instance.
+- Java Temurin vérifié par SHA-256 ; empreinte locale de `java.exe` contrôlée avant chaque lancement. Les runtimes sont mis en cache par version majeure dans `runtimes/` et réutilisés entre les instances.
+- RAM, **version de Java** (automatique ou forcée), arguments JVM, résolution, plein écran et serveur au démarrage par instance.
+- Une version Java inférieure au minimum exigé par Minecraft est refusée au lancement avec un message explicite.
 - Connexion directe à un serveur au lancement : `--quickPlayMultiplayer` sur Minecraft 1.20+, avec repli sur `--server` / `--port` pour les versions antérieures.
 - Image de couverture par instance : icône Modrinth automatique pour les modpacks installés depuis le catalogue, image personnelle (PNG, JPEG ou WebP) importable depuis la page de l’instance, couverture spatiale par défaut issue du panorama XalLauncher et logo XalLauncher en repli.
 - Dossier de données configurable (instances, bibliothèques, assets, runtimes, journaux, sauvegardes) avec déplacement des données existantes et redémarrage automatique.
@@ -65,7 +66,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 | XalLauncher | `.mrpack` | ✅ | ✅ |
 
 - L’import détecte le format **par le contenu** de l’archive, pas par son extension.
-- Un pack exporté par XalLauncher contient `modrinth.index.json`, tous les fichiers dans `overrides/` et `xallauncher.json` (RAM, résolution, JVM, modules, serveur). Il se réimporte sans téléchargement dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App.
+- Un pack exporté par XalLauncher contient `modrinth.index.json`, tous les fichiers dans `overrides/` et `xallauncher.json` (RAM, version de Java, résolution, JVM, modules, serveur). Il se réimporte sans téléchargement dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App.
 - Les mondes et les captures sont exclus par défaut à l’export ; deux options permettent de les inclure.
 - **Formats non pris en charge** : CurseForge `.zip` (le téléchargement de ses mods exige une clé API CurseForge), ATLauncher, FTB, Technic et un dossier `.minecraft` brut. Pour un pack CurseForge, importez-le dans Prism Launcher, puis importez le dossier de l’instance Prism dans XalLauncher.
 - Le pack de branding XalLauncher, les journaux, les rapports de crash et les caches sont toujours exclus de l’export.
@@ -244,6 +245,7 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.
 - Les images de couverture d’instance (personnalisées ou récupérées depuis Modrinth) restent locales et ne sont pas incluses dans les exports `.mrpack`.
 - Le module Performance n’installe aucun mod : il agit uniquement sur la JVM, `options.txt` et le processus Windows.
+- Le choix manuel d’une version Java récente (21 ou 25) n’est pas garanti avec les anciennes versions de Minecraft ou les anciens installateurs Forge ; le mode **Automatique** reste recommandé.
 - Le Branding est un resource pack (menu, splashs, icône, titre) ; l’écran de chargement et l’icône de fenêtre 100 % personnalisés nécessiteraient un mod compagnon, non inclus.
 - Le panorama de branding pèse environ 26 Mo de PNG embarqués (~4 à 5 Mo par face), et chaque instance reçoit sa propre copie du pack. Modifier le panorama impose de relancer `bake_branding` puis de reconstruire l’application.
 - Discord Rich Presence et la mise à jour automatique des mods ne sont pas implémentés.

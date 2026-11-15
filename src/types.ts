@@ -71,6 +71,7 @@ export interface Instance {
   fullscreen: boolean;
   closeOnLaunch: boolean;
   javaPath?: string;
+  javaMajor?: number;
   jvmArguments: string;
   serverAddress?: string;
   iconUrl?: string;
@@ -94,6 +95,7 @@ export interface InstanceInput {
   fullscreen: boolean;
   closeOnLaunch: boolean;
   javaPath?: string;
+  javaMajor?: number;
   jvmArguments: string;
   serverAddress?: string;
   modules?: ModuleState;

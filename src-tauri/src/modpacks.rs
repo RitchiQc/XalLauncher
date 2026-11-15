@@ -101,6 +101,7 @@ pub(crate) async fn import_pack(
         fullscreen: false,
         close_on_launch: false,
         java_path: None,
+        java_major: None,
         jvm_arguments: String::new(),
         server_address: None,
         icon_url: None,

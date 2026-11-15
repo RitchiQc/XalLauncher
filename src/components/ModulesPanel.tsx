@@ -20,7 +20,7 @@ function inputFrom(instance: Instance, modules: ModuleState): InstanceInput {
     color: instance.color, memoryMin: instance.memoryMin, memoryMax: instance.memoryMax,
     resolutionWidth: instance.resolutionWidth, resolutionHeight: instance.resolutionHeight,
     fullscreen: instance.fullscreen, closeOnLaunch: instance.closeOnLaunch, javaPath: instance.javaPath,
-    jvmArguments: instance.jvmArguments, serverAddress: instance.serverAddress, modules,
+    javaMajor: instance.javaMajor, jvmArguments: instance.jvmArguments, serverAddress: instance.serverAddress, modules,
   };
 }
 

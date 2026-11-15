@@ -25,6 +25,7 @@ struct XalSettings {
     resolution_height: Option<u32>,
     fullscreen: Option<bool>,
     close_on_launch: Option<bool>,
+    java_major: Option<u32>,
     jvm_arguments: Option<String>,
     server_address: Option<String>,
     modules: Option<ModuleState>,
@@ -138,6 +139,12 @@ fn apply_settings(store: &Store, instance: &mut Instance, settings: &XalSettings
     }
     if let Some(value) = settings.close_on_launch {
         instance.close_on_launch = value;
+    }
+    if let Some(major) = settings
+        .java_major
+        .filter(|major| crate::instances::valid_java_major(*major))
+    {
+        instance.java_major = Some(major);
     }
     if let Some(value) = settings.jvm_arguments.as_deref() {
         if value.len() <= 4096 && !value.chars().any(char::is_control) {
@@ -592,6 +599,7 @@ fn build_instance(
         fullscreen: false,
         close_on_launch: false,
         java_path: None,
+        java_major: None,
         jvm_arguments: String::new(),
         server_address: config.server_address.filter(|value| {
             !value.is_empty() && value.len() <= 255 && !value.chars().any(char::is_control)

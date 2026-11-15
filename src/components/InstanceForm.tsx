@@ -9,6 +9,7 @@ import { Button, Modal, Toggle } from "./UI";
 
 const loaders: Loader[] = ["vanilla", "fabric", "forge", "neoforge", "quilt"];
 const colors = ["#8b5cf6", "#06b6d4", "#22c55e", "#f59e0b", "#ef4444", "#ec4899"];
+const javaVersions = [25, 21, 17, 11, 8];
 
 function inputFrom(instance?: Instance): InstanceInput {
   return instance ? {
@@ -16,7 +17,7 @@ function inputFrom(instance?: Instance): InstanceInput {
     color: instance.color, memoryMin: instance.memoryMin, memoryMax: instance.memoryMax,
     resolutionWidth: instance.resolutionWidth, resolutionHeight: instance.resolutionHeight,
     fullscreen: instance.fullscreen, closeOnLaunch: instance.closeOnLaunch, javaPath: instance.javaPath,
-    jvmArguments: instance.jvmArguments, serverAddress: instance.serverAddress,
+    javaMajor: instance.javaMajor, jvmArguments: instance.jvmArguments, serverAddress: instance.serverAddress,
     modules: instance.modules ?? defaultModules,
   } : {
     name: "", versionId: "", loader: "vanilla", color: colors[0], memoryMin: 512, memoryMax: 4096,
@@ -94,6 +95,10 @@ export function InstanceForm({ existing, onClose, onSaved }: { existing?: Instan
       <details className="advanced field-full"><summary>Réglages avancés</summary><div className="form-grid">
         <label className="field"><span>Résolution largeur</span><input type="number" min={640} value={input.resolutionWidth} onChange={(event) => patch("resolutionWidth", Number(event.target.value))} /></label>
         <label className="field"><span>Résolution hauteur</span><input type="number" min={360} value={input.resolutionHeight} onChange={(event) => patch("resolutionHeight", Number(event.target.value))} /></label>
+        <label className="field"><span>Version de Java</span><select aria-label="Version de Java" value={input.javaMajor ?? ""} onChange={(event) => patch("javaMajor", event.target.value ? Number(event.target.value) : undefined)}>
+          <option value="">Automatique (selon Minecraft)</option>
+          {javaVersions.map((major) => <option key={major} value={major}>Java {major} · LTS</option>)}
+        </select><small>Téléchargé et vérifié automatiquement via Eclipse Temurin. Les versions antérieures à 1.17 préfèrent Java 8.</small></label>
         <label className="field field-full"><span>Arguments JVM supplémentaires</span><input value={input.jvmArguments} onChange={(event) => patch("jvmArguments", event.target.value)} placeholder="-XX:+UseG1GC" /></label>
       </div></details>
     </div>

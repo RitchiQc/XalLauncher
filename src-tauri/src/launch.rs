@@ -490,9 +490,10 @@ pub async fn launch_instance(
     emit(&app, "Vérification de la session", 0, 1);
     let (account, token) = valid_token(&state, &account_id).await?;
     let base_profile = version_json(&state.client, &instance.version_id).await?;
-    let java_major = base_profile["javaVersion"]["majorVersion"]
+    let required_java = base_profile["javaVersion"]["majorVersion"]
         .as_u64()
         .unwrap_or(8);
+    let java_major = instance.java_major.map(u64::from).unwrap_or(required_java);
     let java = match &instance.java_path {
         Some(path) if path.is_file() => path.clone(),
         Some(_) => {
@@ -501,6 +502,11 @@ pub async fn launch_instance(
             ))
         }
         None => {
+            if java_major < required_java {
+                return Err(AppError::new(format!(
+                    "Cette version de Minecraft nécessite Java {required_java} ou supérieur (Java {java_major} sélectionné)"
+                )));
+            }
             crate::java::ensure_java(&state.client, &state.store, java_major, Some(&app)).await?
         }
     };

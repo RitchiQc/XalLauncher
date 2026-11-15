@@ -5,6 +5,11 @@ use std::fs;
 
 const ICON_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 const MAX_ICON_BYTES: u64 = 8 * 1024 * 1024;
+pub(crate) const JAVA_MAJORS: [u32; 5] = [8, 11, 17, 21, 25];
+
+pub(crate) fn valid_java_major(major: u32) -> bool {
+    JAVA_MAJORS.contains(&major)
+}
 
 pub(crate) fn valid_version(value: &str) -> bool {
     !value.is_empty()
@@ -47,6 +52,13 @@ fn validate(input: &InstanceInput) -> Result<()> {
     if input.resolution_width < 640 || input.resolution_height < 360 {
         return Err(AppError::new("La résolution minimale est de 640 × 360"));
     }
+    if let Some(major) = input.java_major {
+        if !valid_java_major(major) {
+            return Err(AppError::new(
+                "Version de Java invalide : choisissez Java 8, 11, 17, 21 ou 25",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -75,6 +87,7 @@ pub fn create_instance(
         fullscreen: input.fullscreen,
         close_on_launch: input.close_on_launch,
         java_path: input.java_path,
+        java_major: input.java_major,
         jvm_arguments: input.jvm_arguments,
         server_address: input.server_address,
         icon_url: None,
@@ -124,6 +137,7 @@ pub fn update_instance(
         fullscreen: input.fullscreen,
         close_on_launch: input.close_on_launch,
         java_path: input.java_path,
+        java_major: input.java_major,
         jvm_arguments: input.jvm_arguments,
         server_address: input.server_address,
         icon_url,
@@ -307,7 +321,47 @@ pub fn instance_icon_path(
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_icon_name, valid_version};
+    use super::{valid_icon_name, valid_java_major, valid_version, JAVA_MAJORS};
+    use crate::models::{InstanceInput, Loader};
+
+    fn input(java_major: Option<u32>) -> InstanceInput {
+        InstanceInput {
+            name: "Test".into(),
+            version_id: "1.21.4".into(),
+            loader: Loader::Vanilla,
+            loader_version: None,
+            color: "#8b5cf6".into(),
+            memory_min: 512,
+            memory_max: 4096,
+            resolution_width: 1280,
+            resolution_height: 720,
+            fullscreen: false,
+            close_on_launch: false,
+            java_path: None,
+            java_major,
+            jvm_arguments: String::new(),
+            server_address: None,
+            modules: Default::default(),
+        }
+    }
+
+    #[test]
+    fn accepts_supported_java_majors() {
+        assert_eq!(JAVA_MAJORS, [8, 11, 17, 21, 25]);
+        assert!(super::validate(&input(None)).is_ok());
+        for major in JAVA_MAJORS {
+            assert!(valid_java_major(major));
+            assert!(super::validate(&input(Some(major))).is_ok());
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_java_majors() {
+        for major in [0, 7, 16, 22, 26] {
+            assert!(!valid_java_major(major));
+            assert!(super::validate(&input(Some(major))).is_err());
+        }
+    }
 
     #[test]
     fn validates_version_components() {

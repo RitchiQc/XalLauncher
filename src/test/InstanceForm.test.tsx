@@ -65,6 +65,32 @@ describe("InstanceForm", () => {
     expect(onSaved).toHaveBeenCalledWith(created);
   });
 
+  it("permet de choisir la version de Java de l’instance", async () => {
+    mocks.versions.mockResolvedValue([release]);
+    renderForm();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Minecraft" })).toHaveValue(release.id));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Nom de l’instance" }), { target: { value: "Mon aventure" } });
+    const java = screen.getByRole("combobox", { name: "Version de Java" });
+    expect(java).toHaveValue("");
+    fireEvent.change(java, { target: { value: "25" } });
+    expect(java).toHaveValue("25");
+
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’instance" }));
+    await waitFor(() => expect(mocks.createInstance).toHaveBeenCalledWith(expect.objectContaining({ javaMajor: 25 })));
+  });
+
+  it("conserve le choix Java automatique sans valeur explicite", async () => {
+    mocks.versions.mockResolvedValue([release]);
+    renderForm();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Minecraft" })).toHaveValue(release.id));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Nom de l’instance" }), { target: { value: "Mon aventure" } });
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’instance" }));
+    await waitFor(() => expect(mocks.createInstance).toHaveBeenCalled());
+    expect(mocks.createInstance.mock.calls[0][0]).not.toHaveProperty("javaMajor");
+  });
+
   it("explique un échec de chargement et permet une nouvelle tentative", async () => {
     mocks.versions.mockRejectedValueOnce("Connexion au manifeste impossible").mockResolvedValueOnce([release]);
     renderForm();
