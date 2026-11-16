@@ -24,7 +24,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 
 - Instances isolées : mods, mondes, configurations et captures séparés.
 - Versions release et snapshots du manifeste officiel Mojang, avec source officielle de repli et nouvelle tentative en cas d’échec réseau.
-- Vanilla, Fabric, Quilt, Forge et NeoForge.
+- Vanilla, Fabric, Quilt, Forge et NeoForge, ainsi que **Horizon**, le client natif Rust de Minecraft Java Edition 26.3.
 - Détection automatique de la version Java requise ou choix explicite de **Java 8, 11, 17, 21 ou 25** par instance, avec installation et vérification d’Eclipse Temurin.
 - Téléchargements HTTPS vérifiés du client, des bibliothèques, des natives et des assets.
 - Reprise des téléchargements, tentatives automatiques et vérification SHA-1, SHA-256 ou SHA-512 selon les métadonnées disponibles.
@@ -40,9 +40,21 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Export d’une instance en `.mrpack` autonome, réimportable dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App, avec inclusion facultative des mondes et des captures.
 - L’interface indique les formats supportés dans le dialogue d’import ; les formats non reconnus produisent un message explicite.
 
+### Horizon (moteur natif Rust)
+
+- Instance **Horizon** dédiée à **Minecraft Java Edition 26.3**, avec builds **Nightly** récupérés depuis les Releases officielles `horizon-rust/horizon`.
+- Archive Windows vérifiée par **SHA-256** contre `SHA256SUMS`, puis extraction complète (`horizon-client`, `horizon-prepare`, `research-lock.json`, `exporters/`).
+- Préparation des ressources à partir de la copie Minecraft 26.3 possédée par le joueur : client, bibliothèques Maven, assets et `server.jar` téléchargé depuis le manifeste Mojang, avec vérification des empreintes.
+- **JDK 25 Temurin** dédié à `horizon-prepare` (`runtimes/jdk-25`), séparé du JRE utilisé par les instances Minecraft classiques. Aucun Java n’est utilisé pour exécuter Horizon.
+- Lancement natif avec `--resources`, `--game-dir`, `--home`, résolution, plein écran et serveur de démarrage ; le jeton Minecraft est transmis par **stdin** (`--session-stdin`), jamais en ligne de commande.
+- `horizon-prepare --check` est exécuté avant chaque partie ; une préparation incomplète est refaite automatiquement.
+- Marché **Horizon** intégré à l’onglet Mods / Resource packs / Shaders d’une instance Horizon : registre `https://horizon-rust.github.io/horizon-mods/index.json`, filtrage Minecraft 26.3 et API de contenu 0.2, installation vérifiée par SHA-256 et taille.
+- Mods `.hmod` installés dans `horizon-mods/` et activés dans `horizon-mods.txt` (`mod.<id>:true`) ; resource packs dans `resourcepacks/`, shaders `.hshader` ou `.zip` dans `shaderpacks/`.
+
 ### Contenu
 
 - Recherche Modrinth de mods, resource packs et shaders directement depuis chaque instance.
+- Marché Horizon pour les instances Horizon : mods `.hmod`, resource packs et shaders compatibles avec Minecraft 26.3, sans exposition des mods Java ou des mods natifs Horizon.
 - Recherche de modpacks depuis la Bibliothèque, avec création automatique d’une nouvelle instance isolée.
 - Scroll infini dans l’explorateur Modrinth (24 résultats par page, chargement automatique) et tri par pertinence, téléchargements, suivis, nouveautés ou dernière mise à jour.
 - L’explorateur reste ouvert sur la page « Ajouter » après une installation, pour enchaîner plusieurs contenus sans revenir à la liste.
@@ -53,7 +65,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Installation de la dernière publication d’un modpack Modrinth (avec récupération de l’icône du projet) et import de fichiers `.mrpack`.
 - Import de contenus locaux **par lot** : plusieurs `.jar` ou `.zip` à la fois, ou glisser-déposer dans l’onglet Mods / Resource packs / Shaders.
 - Activation/désactivation et suppression de contenus locaux.
-- Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks, qui contiennent du code Java exécutable.
+- Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks : code Java exécutable pour Minecraft, contenu `.hmod` sandboxé mais fourni par un tiers pour Horizon.
 - Liste des mondes et galerie des captures d’écran.
 - Sauvegardes ZIP des mondes, restauration sécurisée et sauvegarde automatique avant restauration.
 
@@ -191,6 +203,10 @@ Microsoft ne permet pas la connexion par mot de passe direct pour les comptes pe
 - Les corps des réponses d’erreur Microsoft/Xbox/Minecraft ne sont pas renvoyés à l’interface, afin d’éviter toute fuite accidentelle de données sensibles.
 - Les téléchargements exigent HTTPS. Les artefacts exécutables sans empreinte dans leur profil utilisent le checksum Maven SHA-256, avec SHA-1 uniquement comme repli de compatibilité. L’absence de checksum bloque leur utilisation.
 - Les publications Modrinth sont vérifiées par SHA-512 en priorité. Les fichiers en cache associés à une empreinte sont revérifiés avant réutilisation.
+- Les archives Horizon sont vérifiées par SHA-256, les fichiers du registre Horizon par SHA-256 et taille, avec une liste blanche d’hôtes de téléchargement. Les ressources préparées sont contrôlées par `horizon-prepare --check`.
+- Le JDK Temurin 25 est vérifié par SHA-256 avant utilisation ; il est réservé à la préparation Horizon.
+- La session Horizon est écrite sur l’entrée standard du processus puis fermée : le jeton Minecraft n’apparaît pas dans la ligne de commande.
+- Chaque Release XalLauncher publie `SHA256SUMS` couvrant l’installeur et `latest.json`, avec `SHA256SUMS.sig` signé par la clé minisign Tauri. L’updater vérifie la signature du paquet avant toute installation.
 - Les runtimes Java installés avant l’ajout des empreintes locales seront réinstallés une fois avant leur prochain lancement.
 
 **Limite importante :** un mod ou modpack est du code Java arbitraire exécuté dans le processus Minecraft. Le jeton de session Minecraft doit être transmis au jeu et reste donc accessible à ce code, ainsi qu’aux processus locaux capables de lire la ligne de commande Java. Un checksum garantit l’intégrité par rapport aux métadonnées de la source, pas l’innocuité de l’auteur ni la protection contre une source amont compromise. N’installez que des contenus de confiance. Le refresh token Microsoft n’est jamais transmis à Minecraft.
@@ -198,7 +214,8 @@ Microsoft ne permet pas la connexion par mot de passe direct pour les comptes pe
 ## CI/CD et Releases
 
 - `.github/workflows/ci.yml` exécute les contrôles frontend et Rust sur `main` et les pull requests, ainsi que `npm audit` et `cargo audit` installé depuis un binaire Windows précompilé et vérifié.
-- `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, aligne automatiquement `package.json` et `src-tauri/Cargo.toml` sur la version du tag (elle-même lue par `tauri.conf.json` via `"version": "../package.json"`), réutilise les artefacts release des tests Rust, puis publie l’installeur signé, sa signature et `latest.json`.
+- `.github/workflows/release.yml` compile et signe Windows sur un tag `v*`, aligne automatiquement `package.json` et `src-tauri/Cargo.toml` sur la version du tag (elle-même lue par `tauri.conf.json` via `"version": "../package.json"`), réutilise les artefacts release des tests Rust, puis publie l’installeur signé, sa signature, `latest.json`, `SHA256SUMS` et `SHA256SUMS.sig`.
+- `SHA256SUMS` couvre l’installeur renommé et `latest.json` ; il est signé avec la même clé minisign Tauri que l’updater. Une Release échoue si le manifeste ou sa signature est absent.
 - Le profil release utilise un LTO `thin` et 4 unités de génération de code pour réduire la durée des builds.
 - Les actions GitHub sont épinglées par SHA de commit pour limiter les risques de supply-chain.
 - Le job de publication utilise l’environnement GitHub `release`. Configure dans les paramètres du dépôt des approbateurs obligatoires et une restriction aux tags protégés avant de publier.
@@ -222,8 +239,9 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src/` : interface React, pages, composants, état et tests.
 - `src-tauri/src/auth.rs` : Microsoft, Xbox, Minecraft et capes.
 - `src-tauri/src/launch.rs` : préparation et processus Minecraft.
+- `src-tauri/src/horizon.rs` : builds Nightly, préparation, JDK 25 et lancement natif Horizon.
 - `src-tauri/src/loaders.rs` : Fabric, Quilt, Forge et NeoForge.
-- `src-tauri/src/providers/` : intégration Modrinth.
+- `src-tauri/src/providers/` : intégration Modrinth et registre Horizon.
 - `src-tauri/src/content.rs` : contenu local.
 - `src-tauri/src/modpacks.rs` : archives `.mrpack`.
 - `src-tauri/src/backup.rs` : sauvegardes des mondes.
@@ -250,7 +268,14 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - Le panorama de branding pèse environ 26 Mo de PNG embarqués (~4 à 5 Mo par face), et chaque instance reçoit sa propre copie du pack. Modifier le panorama impose de relancer `bake_branding` puis de reconstruire l’application.
 - Discord Rich Presence et la mise à jour automatique des mods ne sont pas implémentés.
 - Les tests de connexion, de possession du jeu et de lancement authentifié exigent un compte Microsoft réel ; ils ne sont pas simulés en CI.
+- **Horizon** ne prend en charge que Minecraft Java Edition 26.3. Les mods Java Fabric/Forge/NeoForge/Quilt sont incompatibles ; le marché Horizon ne les propose pas.
+- Les **mods natifs Horizon** (`native-mod`) ne sont pas installés : ils exigent un rebuild Rust du jeu avec le SDK et les révisions exactes de Horizon. Ils sont volontairement filtrés du marché.
+- Les **modpacks Horizon** (`.hpack`) ne sont pas encore importés ; seuls les mods, resource packs et shaders du registre sont pris en charge.
+- Le tag `nightly` est mobile et les tags datés sont supprimés après quelques jours ; XalLauncher met en cache chaque build par empreinte SHA-256. La première préparation prend plusieurs minutes et télécharge aussi un JDK 25.
+- L’onglet **Modules** (Performance, Branding et sauvegarde automatique) est masqué pour Horizon : le client est natif et ces réglages reposent sur la JVM, `options.txt` ou le pipeline Java. Les sauvegardes manuelles des mondes restent disponibles.
+- La signature minisign des projets du registre Horizon et la signature Authenticode de l’exécutable Windows ne sont pas encore vérifiées. L’updater Tauri et le manifeste `SHA256SUMS` des Releases sont signés par minisign.
+- Les imports manuels de `.hmod` peuvent nécessiter une activation dans `Options > Mods` si l’identifiant interne du mod diffère du nom de fichier.
 
 ## Mentions
 
-XalLauncher n’est pas affilié à Mojang, Microsoft ou Modrinth. Minecraft est une marque de Mojang Synergies AB. Les contenus restent soumis aux licences de leurs auteurs et plateformes.
+XalLauncher n’est pas affilié à Mojang, Microsoft, Modrinth ou Horizon. Minecraft est une marque de Mojang Synergies AB. Horizon est un projet open source non officiel ; ses binaires sont téléchargés depuis ses Releases GitHub et restent soumis à leurs licences (LGPL-3.0 pour le projet Horizon, licences propres à ses dépendances). Les contenus restent soumis aux licences de leurs auteurs et plateformes.

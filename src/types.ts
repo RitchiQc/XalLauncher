@@ -1,4 +1,4 @@
-export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge";
+export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge" | "horizon";
 export type LoginMode = "device" | "browser";
 export type ContentKind = "mod" | "resourcepack" | "shader" | "world";
 export type Theme = "dark" | "light" | "space";
@@ -148,6 +148,7 @@ export interface ContentEntry {
   projectTitle?: string;
   versionId?: string;
   iconUrl?: string;
+  provider?: "modrinth" | "horizon";
 }
 
 export interface ImportFailure {
@@ -190,6 +191,7 @@ export interface ProjectHit {
   follows: number;
   projectType: string;
   versions: string[];
+  provider?: "modrinth" | "horizon";
 }
 
 export interface ModrinthVersion {

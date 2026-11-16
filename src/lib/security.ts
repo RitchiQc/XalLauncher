@@ -9,3 +9,13 @@ export function confirmCodeExecution(content: string): Promise<boolean> {
     "warning",
   );
 }
+
+export function confirmHorizonContent(content: string): Promise<boolean> {
+  return confirmAction(
+    `${content} sera chargé par Horizon. Les mods de contenu .hmod sont sandboxés, ` +
+    "mais ils restent du contenu exécutable fourni par un tiers. " +
+    "N’installez que du contenu dont vous faites confiance. Continuer ?",
+    "Contenu Horizon",
+    "warning",
+  );
+}

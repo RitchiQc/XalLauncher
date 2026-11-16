@@ -1,13 +1,18 @@
 use crate::error::{AppError, Result};
-use crate::models::ContentEntry;
+use crate::models::{ContentEntry, Loader};
+use crate::providers::horizon::{mod_enabled, mod_id_from_file, set_mod_enabled};
 use crate::providers::modrinth::ContentMetadata;
 use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-fn folder_for_kind(kind: &str) -> Result<&'static str> {
+fn folder_for_kind(loader: Loader, kind: &str) -> Result<&'static str> {
     match kind {
-        "mod" => Ok("mods"),
+        "mod" => Ok(if loader == Loader::Horizon {
+            "horizon-mods"
+        } else {
+            "mods"
+        }),
         "resourcepack" => Ok("resourcepacks"),
         "shader" => Ok("shaderpacks"),
         "world" => Ok("saves"),
@@ -80,7 +85,9 @@ pub(crate) fn list_entries(
     instance_id: &str,
     kind: &str,
 ) -> Result<Vec<ContentEntry>> {
-    let folder = store.game_dir(instance_id).join(folder_for_kind(kind)?);
+    let loader = store.instance(instance_id)?.loader;
+    let game_dir = store.game_dir(instance_id);
+    let folder = game_dir.join(folder_for_kind(loader, kind)?);
     if !folder.exists() {
         return Ok(Vec::new());
     }
@@ -88,6 +95,12 @@ pub(crate) fn list_entries(
     for item in fs::read_dir(folder)?.flatten() {
         let name = item.file_name().to_string_lossy().to_string();
         if name.starts_with('.') {
+            continue;
+        }
+        if loader == Loader::Horizon
+            && kind == "mod"
+            && !(name.ends_with(".hmod") || name.ends_with(".hmod.disabled"))
+        {
             continue;
         }
         let path = item.path();
@@ -101,7 +114,11 @@ pub(crate) fn list_entries(
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         let metadata = metadata(&path);
         entries.push(ContentEntry {
-            enabled: !name.ends_with(".disabled"),
+            enabled: if loader == Loader::Horizon && kind == "mod" {
+                !name.ends_with(".disabled") && mod_enabled(&game_dir, mod_id_from_file(&name))
+            } else {
+                !name.ends_with(".disabled")
+            },
             file_name: name,
             kind: kind.to_string(),
             size: if is_dir {
@@ -113,7 +130,8 @@ pub(crate) fn list_entries(
             project_id: metadata.as_ref().map(|meta| meta.project_id.clone()),
             project_title: metadata.as_ref().map(|meta| meta.project_title.clone()),
             version_id: metadata.as_ref().map(|meta| meta.version_id.clone()),
-            icon_url: metadata.and_then(|meta| meta.icon_url),
+            icon_url: metadata.as_ref().and_then(|meta| meta.icon_url.clone()),
+            provider: metadata.and_then(|meta| meta.provider),
         });
     }
     entries.sort_by_key(|entry| std::cmp::Reverse(entry.modified_at));
@@ -131,13 +149,25 @@ pub fn toggle_content(
         return Err(AppError::new("Ce contenu ne peut pas être désactivé"));
     }
     let name = safe_name(&file_name)?;
-    let path = state
-        .store
-        .game_dir(&instance_id)
-        .join(folder_for_kind(&kind)?)
-        .join(name);
+    let loader = state.store.instance(&instance_id)?.loader;
+    let game_dir = state.store.game_dir(&instance_id);
+    let path = game_dir.join(folder_for_kind(loader, &kind)?).join(name);
     if !path.is_file() {
         return Err(AppError::new("Fichier introuvable"));
+    }
+    if loader == Loader::Horizon && kind == "mod" {
+        let active_name = name.strip_suffix(".disabled").unwrap_or(name);
+        let active_path = path.with_file_name(active_name);
+        let enabled =
+            !name.ends_with(".disabled") && mod_enabled(&game_dir, mod_id_from_file(active_name));
+        if !enabled && active_path != path {
+            fs::rename(&path, &active_path)?;
+        }
+        set_mod_enabled(&game_dir, mod_id_from_file(active_name), !enabled)?;
+        return list_entries(&state.store, &instance_id, &kind)?
+            .into_iter()
+            .find(|entry| entry.file_name == active_name)
+            .ok_or_else(|| AppError::new("Contenu Horizon introuvable"));
     }
     let new_name = name
         .strip_suffix(".disabled")
@@ -165,15 +195,16 @@ pub fn delete_content(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<()> {
     let name = safe_name(&file_name)?;
-    let path = state
-        .store
-        .game_dir(&instance_id)
-        .join(folder_for_kind(&kind)?)
-        .join(name);
+    let loader = state.store.instance(&instance_id)?.loader;
+    let game_dir = state.store.game_dir(&instance_id);
+    let path = game_dir.join(folder_for_kind(loader, &kind)?).join(name);
     if path.is_dir() {
         fs::remove_dir_all(&path)?;
     } else if path.is_file() {
         fs::remove_file(&path)?;
+    }
+    if loader == Loader::Horizon && kind == "mod" {
+        let _ = set_mod_enabled(&game_dir, mod_id_from_file(name), false);
     }
     let _ = fs::remove_file(sidecar(&path));
     if let Some(base) = name.strip_suffix(".disabled") {
@@ -190,10 +221,11 @@ pub fn content_file_path(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<String> {
     let name = safe_name(&file_name)?;
+    let loader = state.store.instance(&instance_id)?.loader;
     let path = state
         .store
         .game_dir(&instance_id)
-        .join(folder_for_kind(&kind)?)
+        .join(folder_for_kind(loader, &kind)?)
         .join(name);
     if !path.exists() {
         return Err(AppError::new("Fichier introuvable"));
@@ -216,10 +248,19 @@ pub struct ImportFailure {
     pub message: String,
 }
 
-fn allowed_extensions(kind: &str) -> Option<&'static [&'static str]> {
+fn allowed_extensions(loader: Loader, kind: &str) -> Option<&'static [&'static str]> {
     match kind {
-        "mod" => Some(&["jar"]),
-        "resourcepack" | "shader" => Some(&["zip"]),
+        "mod" => Some(if loader == Loader::Horizon {
+            &["hmod"]
+        } else {
+            &["jar"]
+        }),
+        "resourcepack" => Some(&["zip"]),
+        "shader" => Some(if loader == Loader::Horizon {
+            &["zip", "hshader"]
+        } else {
+            &["zip"]
+        }),
         _ => None,
     }
 }
@@ -246,8 +287,12 @@ fn copy_content(
             "Utilisez le dossier du jeu pour ce type de contenu",
         ));
     }
+    let loader = store
+        .instance(instance_id)
+        .map(|instance| instance.loader)
+        .unwrap_or(Loader::Vanilla);
     let extensions =
-        allowed_extensions(kind).ok_or_else(|| AppError::new("Type de contenu inconnu"))?;
+        allowed_extensions(loader, kind).ok_or_else(|| AppError::new("Type de contenu inconnu"))?;
     if !source_path.is_file() {
         return Err(AppError::new("Le fichier à importer est introuvable"));
     }
@@ -262,7 +307,9 @@ fn copy_content(
         .and_then(|name| name.to_str())
         .ok_or_else(|| AppError::new("Nom de fichier invalide"))?;
     safe_name(name)?;
-    let folder = store.game_dir(instance_id).join(folder_for_kind(kind)?);
+    let folder = store
+        .game_dir(instance_id)
+        .join(folder_for_kind(loader, kind)?);
     fs::create_dir_all(&folder)?;
     let destination = folder.join(name);
     if destination.exists() {
@@ -283,7 +330,8 @@ fn copy_content(
         project_id: metadata.as_ref().map(|meta| meta.project_id.clone()),
         project_title: metadata.as_ref().map(|meta| meta.project_title.clone()),
         version_id: metadata.as_ref().map(|meta| meta.version_id.clone()),
-        icon_url: metadata.and_then(|meta| meta.icon_url),
+        icon_url: metadata.as_ref().and_then(|meta| meta.icon_url.clone()),
+        provider: metadata.and_then(|meta| meta.provider),
     })
 }
 
@@ -308,7 +356,13 @@ pub(crate) fn import_many(
             "Utilisez le dossier du jeu pour ce type de contenu",
         ));
     }
-    let folder = store.game_dir(instance_id).join(folder_for_kind(kind)?);
+    let loader = store
+        .instance(instance_id)
+        .map(|instance| instance.loader)
+        .unwrap_or(Loader::Vanilla);
+    let folder = store
+        .game_dir(instance_id)
+        .join(folder_for_kind(loader, kind)?);
     let mut summary = ImportSummary::default();
     for source_path in source_paths {
         let file_name = source_path
@@ -346,7 +400,8 @@ pub async fn import_contents(
 
 #[cfg(test)]
 mod tests {
-    use super::import_many;
+    use super::{folder_for_kind, import_many};
+    use crate::models::Loader;
     use crate::store::Store;
 
     #[test]
@@ -373,6 +428,15 @@ mod tests {
         assert!(summary.failed.is_empty());
         assert!(store.game_dir("instance").join("mods/a.jar").is_file());
         assert!(store.game_dir("instance").join("mods/b.jar").is_file());
+    }
+
+    #[test]
+    fn horizon_uses_its_own_mods_folder() {
+        assert_eq!(
+            folder_for_kind(Loader::Horizon, "mod").unwrap(),
+            "horizon-mods"
+        );
+        assert_eq!(folder_for_kind(Loader::Vanilla, "mod").unwrap(), "mods");
     }
 
     #[test]

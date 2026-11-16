@@ -6,6 +6,7 @@ mod content;
 mod crash;
 mod download;
 mod error;
+mod horizon;
 mod http;
 mod instances;
 mod java;
@@ -92,6 +93,9 @@ pub fn run() {
             providers::modrinth::search_modrinth,
             providers::modrinth::list_modrinth_versions,
             providers::modrinth::install_modrinth_project,
+            providers::horizon::search_horizon,
+            providers::horizon::list_horizon_versions,
+            providers::horizon::install_horizon_project,
             content::list_content,
             content::toggle_content,
             content::delete_content,

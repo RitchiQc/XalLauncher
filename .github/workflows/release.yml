@@ -81,6 +81,31 @@ jobs:
             }
           } | ConvertTo-Json -Depth 6
           [IO.File]::WriteAllText((Join-Path $source 'latest.json'), $manifest, [Text.UTF8Encoding]::new($false))
+      - name: Generate and sign SHA256SUMS
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          $source = 'src-tauri/target/release/bundle/nsis'
+          $files = @("XalLauncher-$tag-x64-setup.exe", 'latest.json')
+          $lines = foreach ($file in $files) {
+            $path = Join-Path $source $file
+            if (-not (Test-Path -LiteralPath $path)) { throw "Artefact manquant : $file" }
+            $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $file"
+          }
+          $sums = Join-Path $source 'SHA256SUMS'
+          [IO.File]::WriteAllLines($sums, $lines, [Text.UTF8Encoding]::new($false))
+          if ($env:TAURI_SIGNING_PRIVATE_KEY -match '^(?:[A-Za-z]:[\\/]|/)') {
+            $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $env:TAURI_SIGNING_PRIVATE_KEY
+            Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY
+          }
+          npm.cmd run tauri signer sign "$sums"
+          if (-not (Test-Path -LiteralPath "$sums.sig")) { throw "Signature SHA256SUMS absente" }
+          Write-Host "SHA256SUMS signé pour $tag"
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -89,5 +114,7 @@ jobs:
           generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/nsis/latest.json
+            src-tauri/target/release/bundle/nsis/SHA256SUMS
+            src-tauri/target/release/bundle/nsis/SHA256SUMS.sig
             src-tauri/target/release/bundle/nsis/XalLauncher-*-setup.exe
             src-tauri/target/release/bundle/nsis/XalLauncher-*-setup.exe.sig

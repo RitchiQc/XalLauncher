@@ -125,6 +125,7 @@ pub enum Loader {
     Quilt,
     Forge,
     Neoforge,
+    Horizon,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +230,8 @@ pub struct ContentEntry {
     pub version_id: Option<String>,
     #[serde(default)]
     pub icon_url: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +248,8 @@ pub struct ProjectHit {
     pub follows: u64,
     pub project_type: String,
     pub versions: Vec<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

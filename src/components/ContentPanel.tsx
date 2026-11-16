@@ -6,7 +6,7 @@ import { Download, FileBox, Image, Power, RefreshCw, Search, Trash2, Upload } fr
 import { api } from "@/lib/api";
 import { confirmAction } from "@/lib/dialog";
 import { formatBytes, formatDate, formatImportSummary } from "@/lib/format";
-import { confirmCodeExecution } from "@/lib/security";
+import { confirmCodeExecution, confirmHorizonContent } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
 import type { ContentEntry, Instance } from "@/types";
 import { ProjectBrowser } from "./ProjectBrowser";
@@ -19,6 +19,11 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
   const { perform, notify } = useLauncher();
   const [view, setView] = useState<"installed" | "browse">("installed");
   const downloadable = kind === "mod" || kind === "resourcepack" || kind === "shader";
+  const horizon = instance.loader === "horizon";
+  const extensions = kind === "mod"
+    ? (horizon ? ["hmod"] : ["jar"])
+    : kind === "shader" && horizon ? ["zip", "hshader"] : ["zip"];
+  const extensionKey = extensions.join(",");
   const [items, setItems] = useState<ContentEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(false);
@@ -35,33 +40,37 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
 
   const importPaths = useCallback(async (selection: string[]) => {
     if (!selection.length) return;
-    if (kind === "mod" && !(await confirmCodeExecution(selection.length > 1 ? "Ces mods" : "Ce mod"))) return;
+    if (kind === "mod") {
+      const confirmed = horizon
+        ? await confirmHorizonContent(selection.length > 1 ? "Ces mods" : "Ce mod")
+        : await confirmCodeExecution(selection.length > 1 ? "Ces mods" : "Ce mod");
+      if (!confirmed) return;
+    }
     const result = await perform(() => api.importContents(instanceId, kind, selection));
     if (!result) return;
     notify(formatImportSummary(result), result.failed.length ? (result.imported.length ? "info" : "error") : "success");
     await refresh();
-  }, [instanceId, kind, perform, notify, refresh]);
+  }, [instanceId, kind, horizon, perform, notify, refresh]);
 
   useEffect(() => {
     if (!downloadable || view !== "installed") return;
     let active = true;
     let unlisten: (() => void) | undefined;
-    const extension = kind === "mod" ? ".jar" : ".zip";
+    const expected = extensions.map((extension) => `.${extension}`);
     void getCurrentWebview().onDragDropEvent((event) => {
       if (!active) return;
       if (event.payload.type === "enter" || event.payload.type === "over") { setDragging(true); return; }
       if (event.payload.type === "leave") { setDragging(false); return; }
       if (event.payload.type !== "drop") return;
       setDragging(false);
-      const files = event.payload.paths.filter((path) => path.toLowerCase().endsWith(extension));
-      if (!files.length) { notify(`Déposez uniquement des fichiers ${extension}`, "error"); return; }
+      const files = event.payload.paths.filter((path) => expected.some((extension) => path.toLowerCase().endsWith(extension)));
+      if (!files.length) { notify(`Déposez uniquement des fichiers ${expected.join(" ou ")}`, "error"); return; }
       void importPaths(files);
     }).then((fn) => { if (active) unlisten = fn; else fn(); }).catch(() => undefined);
     return () => { active = false; if (unlisten) unlisten(); };
-  }, [downloadable, view, kind, importPaths, notify]);
+  }, [downloadable, view, kind, importPaths, notify, extensionKey]);
 
   async function importFiles() {
-    const extensions = kind === "mod" ? ["jar"] : ["zip"];
     const selection = await open({ multiple: true, filters: [{ name: labels[kind], extensions }] });
     if (!selection) return;
     await importPaths(Array.isArray(selection) ? selection : [selection]);
@@ -78,7 +87,7 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
   }
 
   return <section className="content-section">
-    {dragging ? <div className="drop-overlay"><Upload size={28} /><strong>Déposez vos fichiers ici</strong><span>{kind === "mod" ? "Fichiers .jar" : "Fichiers .zip"} · plusieurs fichiers acceptés</span></div> : null}
+    {dragging ? <div className="drop-overlay"><Upload size={28} /><strong>Déposez vos fichiers ici</strong><span>{kind === "mod" ? (horizon ? "Fichiers .hmod" : "Fichiers .jar") : kind === "shader" && horizon ? "Fichiers .zip ou .hshader" : "Fichiers .zip"} · plusieurs fichiers acceptés</span></div> : null}
     {downloadable ? <div className="segmented content-view-switch"><button className={view === "installed" ? "active" : ""} onClick={() => setView("installed")}><FileBox size={15} />Installés</button><button className={view === "browse" ? "active" : ""} onClick={() => setView("browse")}><Search size={15} />Ajouter</button></div> : null}
     {view === "browse" && downloadable ? <ProjectBrowser kind={kind} instance={instance} installedContent={items} onContentInstalled={refresh} /> : <>
     <div className="section-toolbar"><div><h3>{kind === "mod" ? "Mods installés" : kind === "world" ? "Vos mondes" : kind === "screenshot" ? "Captures d’écran" : kind === "shader" ? "Shader packs" : "Resource packs"}</h3><span className="muted">{items.length} élément{items.length > 1 ? "s" : ""}</span></div><div><Button variant="ghost" className="icon-button" onClick={() => void refresh()} title="Actualiser"><RefreshCw size={17} /></Button>{!['world', 'screenshot'].includes(kind) ? <Button variant="secondary" onClick={() => void importFiles()}><Upload size={16} />Importer</Button> : null}</div></div>
@@ -86,7 +95,7 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
       <div className="content-icon">{item.iconUrl ? <img src={item.iconUrl} alt="" /> : kind === "world" ? <Image /> : <FileBox />}</div>
       <div className="content-info"><strong>{item.projectTitle ?? item.fileName}</strong><span>{item.fileName} · {formatBytes(item.size)}</span></div>
       <span className="content-date">{formatDate(item.modifiedAt)}</span>
-      {item.projectId ? <span className="provider-badge"><Download size={12} />Modrinth</span> : null}
+      {item.provider === "horizon" ? <span className="provider-badge"><Download size={12} />Horizon</span> : item.projectId ? <span className="provider-badge"><Download size={12} />Modrinth</span> : null}
       {!['world', 'screenshot'].includes(kind) ? <Button variant={item.enabled ? "secondary" : "ghost"} className="icon-button" title={item.enabled ? "Désactiver" : "Activer"} onClick={() => void toggle(item)}><Power size={17} /></Button> : null}
       <Button variant="ghost" className="icon-button danger-icon" title="Supprimer" onClick={() => void remove(item)}><Trash2 size={17} /></Button>
     </article>)}</div>}</>}

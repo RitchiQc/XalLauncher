@@ -45,6 +45,8 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
   const [versionsLoading, setVersionsLoading] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const request = useRef(0);
+  const provider = instance?.loader === "horizon" ? "horizon" : "modrinth";
+  const providerLabel = provider === "horizon" ? "Horizon" : "Modrinth";
   const selectedVersion = versions.find((version) => version.id === selectedVersionId);
   const selectedVersionInstalled = Boolean(selectedProject && installedContent.some((item) => item.projectId === selectedProject.projectId && item.versionId === selectedVersionId));
 
@@ -52,7 +54,9 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     const ticket = ++request.current;
     if (replace) setLoading(true); else setLoadingMore(true);
     try {
-      const page = await api.search(query, kind, instance?.versionId, instance?.loader, offset, sort);
+      const page = provider === "horizon"
+        ? await api.searchHorizon(query, kind, instance?.versionId, instance?.loader, offset, sort)
+        : await api.search(query, kind, instance?.versionId, instance?.loader, offset, sort);
       if (ticket !== request.current) return;
       setResults((items) => {
         if (replace) return page;
@@ -65,7 +69,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     } finally {
       if (ticket === request.current) { setLoading(false); setLoadingMore(false); }
     }
-  }, [query, kind, instance?.versionId, instance?.loader, sort, notify]);
+  }, [query, kind, instance?.versionId, instance?.loader, provider, sort, notify]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadPage(0, true); }, query ? 350 : 0);
@@ -86,6 +90,10 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
 
   async function openVersions(project: ProjectHit) {
     if (kind === "modpack") {
+      if (provider === "horizon") {
+        notify("Les modpacks Horizon (.hpack) seront pris en charge dans une prochaine version", "info");
+        return;
+      }
       if (!(await confirmCodeExecution("Ce modpack"))) return;
       setInstalling(project.projectId);
       const created = await perform(() => api.installModpack(project.projectId), `« ${project.title} » installé`);
@@ -99,7 +107,9 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     setSelectedVersionId("");
     setVersionsLoading(true);
     try {
-      const available = await api.projectVersions(project.projectId, instance.id);
+      const available = provider === "horizon"
+        ? await api.horizonVersions(project.projectId, instance.id)
+        : await api.projectVersions(project.projectId, instance.id);
       setVersions(available);
       setSelectedVersionId(available[0]?.id ?? "");
     } catch (error) {
@@ -114,7 +124,9 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     if (!instance || !selectedProject || !selectedVersionId) return;
     setInstalling(selectedProject.projectId);
     const result = await perform(
-      () => api.installProject(selectedProject.projectId, instance.id, selectedVersionId),
+      () => provider === "horizon"
+        ? api.installHorizonProject(selectedProject.projectId, instance.id, selectedVersionId)
+        : api.installProject(selectedProject.projectId, instance.id, selectedVersionId),
       `« ${selectedProject.title} » installé`,
     );
     setInstalling(undefined);
@@ -130,23 +142,23 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
 
   return <div className="project-browser">
     <div className="browser-toolbar">
-      <label className="search-field explorer-search"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Rechercher ${kind === "mod" ? "des mods" : kind === "modpack" ? "des modpacks" : kind === "shader" ? "des shaders" : "des resource packs"}…`} /><kbd>Modrinth</kbd></label>
+      <label className="search-field explorer-search"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Rechercher ${kind === "mod" ? "des mods" : kind === "modpack" ? "des modpacks" : kind === "shader" ? "des shaders" : "des resource packs"}…`} /><kbd>{providerLabel}</kbd></label>
       <label className="sort-field" title="Trier les résultats"><ArrowUpDown size={16} /><select aria-label="Trier les résultats" value={sort} onChange={(event) => setSort(event.target.value as SearchIndex)}>{sortOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
     </div>
-    <div className="browser-compatibility">{kind === "modpack" ? "Chaque modpack créera une nouvelle instance isolée." : `Contenus compatibles avec Minecraft ${instance?.versionId} · ${instance?.loader}`}</div>
+    <div className="browser-compatibility">{kind === "modpack" ? "Chaque modpack créera une nouvelle instance isolée." : provider === "horizon" ? `Contenus Horizon compatibles avec Minecraft ${instance?.versionId}` : `Contenus compatibles avec Minecraft ${instance?.versionId} · ${instance?.loader}`}</div>
     {loading ? <div className="project-grid">{Array.from({ length: 6 }, (_, index) => <div className="project-card skeleton" key={index} />)}</div> : results.length ? <>
       <div className="project-grid">{results.map((project) => {
         const installed = installedContent.some((item) => item.projectId === project.projectId);
         return <article className="project-card" key={project.projectId}>
-          <button className="project-icon" onClick={() => void openUrl(`https://modrinth.com/${project.projectType}/${project.slug}`)} title="Ouvrir sur Modrinth">{project.iconUrl ? <img src={project.iconUrl} alt="" /> : <PackageSearch />}</button>
-          <div className="project-info"><div className="project-title"><h3>{project.title}</h3>{installed ? <span className="provider-badge"><Check size={12} />Installé</span> : null}<span>par {project.author}</span></div><p>{project.description}</p><div className="project-stats"><span><Download size={14} />{formatNumber(project.downloads)}</span><span><Heart size={14} />{formatNumber(project.follows)}</span><button onClick={() => void openUrl(`https://modrinth.com/${project.projectType}/${project.slug}`)}>Détails<ExternalLink size={13} /></button></div></div>
+          <button className="project-icon" onClick={() => void openUrl(provider === "horizon" ? `https://playhorizon.dev/mods/${project.slug}` : `https://modrinth.com/${project.projectType}/${project.slug}`)} title={`Ouvrir sur ${providerLabel}`}>{project.iconUrl ? <img src={project.iconUrl} alt="" /> : <PackageSearch />}</button>
+          <div className="project-info"><div className="project-title"><h3>{project.title}</h3>{installed ? <span className="provider-badge"><Check size={12} />Installé</span> : <span className="provider-badge">{providerLabel}</span>}<span>par {project.author}</span></div><p>{project.description}</p><div className="project-stats"><span><Download size={14} />{formatNumber(project.downloads)}</span><span><Heart size={14} />{formatNumber(project.follows)}</span><button onClick={() => void openUrl(provider === "horizon" ? `https://playhorizon.dev/mods/${project.slug}` : `https://modrinth.com/${project.projectType}/${project.slug}`)}>Détails<ExternalLink size={13} /></button></div></div>
           <Button className="project-install" variant={installed ? "secondary" : "primary"} loading={installing === project.projectId && !selectedProject} disabled={kind !== "modpack" && !instance} onClick={() => void openVersions(project)}>{installed ? <Check size={16} /> : <Download size={16} />}{installed ? "Versions" : "Installer"}</Button>
         </article>;
       })}</div>
       <div ref={sentinel} className="browser-sentinel" aria-hidden="true" />
       {loadingMore ? <div className="panel-loading"><RefreshCw className="spin" />Chargement de la suite…</div> : null}
       {!loadingMore && hasMore ? <div className="browser-more"><Button variant="secondary" onClick={() => void loadPage(results.length, false)}>Charger plus</Button></div> : null}
-    </> : <EmptyState icon={<PackageSearch size={32} />} title="Aucun contenu compatible" description="Modifiez votre recherche ou utilisez une instance avec une autre version de Minecraft." />}
+    </> : <EmptyState icon={<PackageSearch size={32} />} title="Aucun contenu compatible" description={provider === "horizon" ? (kind === "shader" ? "Aucun shader Horizon compatible avec l’API 0.2 de ce build. Les packs 0.1 sont refusés par Horizon." : "Aucun projet Horizon compatible avec Minecraft 26.3. Modifiez votre recherche.") : "Modifiez votre recherche ou utilisez une instance avec une autre version de Minecraft."} />}
     {selectedProject ? <Modal title={`Installer ${selectedProject.title}`} description="Choisissez la publication compatible avec cette instance." onClose={closeVersions}>
       {versionsLoading ? <div className="panel-loading">Chargement des versions…</div> : versions.length ? <>
         <label className="field field-full"><span>Version du contenu</span><select autoFocus value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)} disabled={Boolean(installing)}>{versions.map((version) => <option key={version.id} value={version.id}>{version.versionNumber} · {version.versionType}{installedContent.some((item) => item.projectId === selectedProject.projectId && item.versionId === version.id) ? " · installée" : ""}</option>)}</select></label>

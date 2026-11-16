@@ -86,6 +86,7 @@ pub async fn search_modrinth(
             follows: hit.follows,
             project_type: hit.project_type,
             versions: hit.versions,
+            provider: Some("modrinth".into()),
         })
         .collect())
 }
@@ -97,6 +98,7 @@ fn loader_name(loader: Loader) -> &'static str {
         Loader::Forge => "forge",
         Loader::Neoforge => "neoforge",
         Loader::Vanilla => "vanilla",
+        Loader::Horizon => "horizon",
     }
 }
 
@@ -107,6 +109,8 @@ pub struct ContentMetadata {
     pub project_title: String,
     pub version_id: String,
     pub icon_url: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,6 +159,11 @@ async fn compatible_versions(
             serde_json::to_string(&json!([instance.version_id]))?,
         )]);
     if project_type == "mod" {
+        if instance.loader == Loader::Horizon {
+            return Err(AppError::new(
+                "Horizon n’exécute pas les mods Java de Modrinth",
+            ));
+        }
         if instance.loader == Loader::Vanilla {
             return Err(AppError::new(
                 "Un modloader est requis pour installer ce mod",
@@ -253,6 +262,7 @@ fn installed_content(
                 project_title: Some(metadata.project_title),
                 version_id: Some(metadata.version_id),
                 icon_url: metadata.icon_url,
+                provider: metadata.provider,
             });
         }
     }
@@ -572,6 +582,7 @@ async fn install_version(
         project_title: project["title"].as_str().unwrap_or(file_name).into(),
         version_id: version["id"].as_str().unwrap_or("").into(),
         icon_url: project["icon_url"].as_str().map(str::to_string),
+        provider: Some("modrinth".into()),
     };
     let sidecar = game_dir.join(folder).join(format!(".{file_name}.xal.json"));
     std::fs::write(sidecar, serde_json::to_vec_pretty(&metadata)?)?;
@@ -585,6 +596,7 @@ async fn install_version(
         project_title: Some(metadata.project_title),
         version_id: Some(metadata.version_id),
         icon_url: metadata.icon_url,
+        provider: metadata.provider,
     })
 }
 
@@ -625,6 +637,7 @@ mod tests {
             project_title: "Sodium".into(),
             version_id: "new".into(),
             icon_url: None,
+            provider: None,
         };
         std::fs::write(
             mods.join(".sodium.jar.xal.json"),
@@ -649,6 +662,7 @@ mod tests {
             project_title: "Pack".into(),
             version_id: "v1".into(),
             icon_url: None,
+            provider: None,
         };
         std::fs::write(
             packs.join(".pack.zip.xal.json"),

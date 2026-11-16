@@ -5,8 +5,11 @@ import type { ContentEntry, Instance, ModrinthVersion, ProjectHit } from "@/type
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
+  searchHorizon: vi.fn(),
   projectVersions: vi.fn(),
+  horizonVersions: vi.fn(),
   installProject: vi.fn(),
+  installHorizonProject: vi.fn(),
   installModpack: vi.fn(),
   perform: vi.fn(),
   notify: vi.fn(),
@@ -16,8 +19,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({
   api: {
     search: mocks.search,
+    searchHorizon: mocks.searchHorizon,
     projectVersions: mocks.projectVersions,
+    horizonVersions: mocks.horizonVersions,
     installProject: mocks.installProject,
+    installHorizonProject: mocks.installHorizonProject,
     installModpack: mocks.installModpack,
   },
   errorMessage: (error: unknown) => typeof error === "string" ? error : "Erreur",
@@ -44,6 +50,15 @@ const installed: ContentEntry = {
   fileName: "sodium.jar", kind: "mod", enabled: true, size: 100, modifiedAt: "2025-02-01T00:00:00Z",
   projectId: "sodium", projectTitle: "Sodium", versionId: "new",
 };
+const horizonInstance: Instance = { ...instance, versionId: "26.3", loader: "horizon" };
+const horizonProject: ProjectHit = {
+  projectId: "coords_hud", slug: "coords_hud", title: "Coordinates HUD", description: "Coordonnées",
+  author: "Horizon", downloads: 2000, follows: 50, projectType: "mod", versions: ["26.3"],
+  provider: "horizon",
+};
+const horizonVersions: ModrinthVersion[] = [
+  { id: "0.1.0", name: "Coordinates HUD 0.1.0", versionNumber: "0.1.0", versionType: "release", datePublished: "2026-11-09", gameVersions: ["26.3"], loaders: ["horizon"] },
+];
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -58,8 +73,11 @@ beforeEach(() => {
     takeRecords() { return []; }
   });
   mocks.search.mockResolvedValue([project]);
+  mocks.searchHorizon.mockResolvedValue([horizonProject]);
   mocks.projectVersions.mockResolvedValue(versions);
+  mocks.horizonVersions.mockResolvedValue(horizonVersions);
   mocks.installProject.mockResolvedValue({ fileName: "sodium.jar" });
+  mocks.installHorizonProject.mockResolvedValue({ fileName: "coords_hud.hmod" });
   mocks.perform.mockImplementation(async (action: () => Promise<unknown>) => action());
   mocks.onContentInstalled.mockResolvedValue(undefined);
 });
@@ -116,5 +134,22 @@ describe("ProjectBrowser", () => {
     await screen.findByText("Sodium");
     fireEvent.change(screen.getByRole("combobox", { name: "Trier les résultats" }), { target: { value: "downloads" } });
     await waitFor(() => expect(mocks.search).toHaveBeenLastCalledWith("", "mod", "1.21.1", "fabric", 0, "downloads"));
+  });
+
+  it("interroge le registre Horizon pour une instance Horizon", async () => {
+    render(<ProjectBrowser kind="mod" instance={horizonInstance} onContentInstalled={mocks.onContentInstalled} />);
+
+    expect(await screen.findByText("Coordinates HUD")).toBeInTheDocument();
+    expect(mocks.searchHorizon).toHaveBeenCalledWith("", "mod", "26.3", "horizon", 0, "relevance");
+    expect(mocks.search).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Installer" }));
+    const select = await screen.findByRole("combobox", { name: "Version du contenu" });
+    expect(select).toHaveValue("0.1.0");
+    fireEvent.click(screen.getByRole("button", { name: "Installer cette version" }));
+
+    await waitFor(() => expect(mocks.installHorizonProject).toHaveBeenCalledWith("coords_hud", "instance-1", "0.1.0"));
+    expect(mocks.horizonVersions).toHaveBeenCalledWith("coords_hud", "instance-1");
+    expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
   });
 });

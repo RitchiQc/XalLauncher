@@ -39,7 +39,7 @@ export function formatDate(value?: string): string {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-export const loaderLabels = { vanilla: "Vanilla", fabric: "Fabric", quilt: "Quilt", forge: "Forge", neoforge: "NeoForge" } as const;
+export const loaderLabels = { vanilla: "Vanilla", fabric: "Fabric", quilt: "Quilt", forge: "Forge", neoforge: "NeoForge", horizon: "Horizon" } as const;
 
 // mc-heads est utilisé en premier : Crafatar répond régulièrement HTTP 500.
 export function avatarUrl(uuid: string, size = 128): string {

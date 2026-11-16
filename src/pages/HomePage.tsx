@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronDown, CircleStop, Clock3, CloudDownload, Library, Play, Plus, ShieldCheck, Sparkles, UserRound } from "lucide-react";
 import { InstanceArtwork } from "@/components/InstanceArtwork";
 import { Button, EmptyState, ProgressBar } from "@/components/UI";
-import { avatarFallback, avatarUrl, formatDuration, handleAvatarError } from "@/lib/format";
+import { avatarFallback, avatarUrl, formatDuration, handleAvatarError, loaderLabels } from "@/lib/format";
 import { useLauncher } from "@/state/LauncherContext";
 
 export function HomePage() {
@@ -33,7 +33,7 @@ export function HomePage() {
     <div className="home-grid">
       <section className="panel recent-panel"><header className="section-heading"><div><span className="eyebrow">Votre bibliothèque</span><h2>Reprendre une aventure</h2></div><Button variant="ghost" onClick={() => navigate("/instances")}>Tout afficher<ArrowRight size={16} /></Button></header>
         <div className="recent-list">{instances.slice(0, 3).map((instance) => <button key={instance.id} className={instance.id === activeInstance.id ? "recent-item active" : "recent-item"} onClick={() => setActiveInstanceId(instance.id)}>
-          <span className="recent-color" style={{ background: instance.color }} /><span><strong>{instance.name}</strong><small>{instance.loader} · {instance.versionId}</small></span><span className="recent-time"><Clock3 size={14} />{formatDuration(instance.totalPlaySeconds)}</span><Play size={17} />
+          <span className="recent-color" style={{ background: instance.color }} /><span><strong>{instance.name}</strong><small>{loaderLabels[instance.loader]} · {instance.versionId}</small></span><span className="recent-time"><Clock3 size={14} />{formatDuration(instance.totalPlaySeconds)}</span><Play size={17} />
         </button>)}</div>
       </section>
       <aside className="panel quick-panel"><span className="eyebrow">Raccourcis</span><h2>À vous de jouer</h2>

@@ -69,6 +69,11 @@ pub async fn export_instance(
     }
     let store = state.store.clone();
     let instance = state.store.instance(&id)?;
+    if instance.loader == Loader::Horizon {
+        return Err(AppError::new(
+            "L’export .mrpack n’est pas pris en charge pour une instance Horizon",
+        ));
+    }
     tokio::task::spawn_blocking(move || {
         export_sync(&store, &instance, &destination, &options, Some(&app))
     })
@@ -111,7 +116,7 @@ fn build_index(instance: &Instance) -> Value {
                     .to_string(),
             )),
             Loader::Neoforge => Some(("neoforge", loader_version.to_string())),
-            Loader::Vanilla => None,
+            Loader::Vanilla | Loader::Horizon => None,
         };
         if let Some((key, value)) = loader {
             dependencies.insert(key.into(), Value::String(value));

@@ -91,6 +91,29 @@ describe("InstanceForm", () => {
     expect(mocks.createInstance.mock.calls[0][0]).not.toHaveProperty("javaMajor");
   });
 
+  it("configure une instance Horizon en 26.3 avec un build Nightly", async () => {
+    const horizonRelease: MinecraftVersion = { id: "26.3", kind: "release", releaseTime: "2026-10-01T00:00:00+00:00" };
+    mocks.versions.mockResolvedValue([horizonRelease]);
+    mocks.loaderVersions.mockResolvedValue([{ version: "nightly", stable: false }]);
+    renderForm();
+
+    const minecraft = screen.getByRole("combobox", { name: "Minecraft" });
+    await waitFor(() => expect(minecraft).toHaveValue("26.3"));
+    fireEvent.change(screen.getByRole("combobox", { name: "Moteur" }), { target: { value: "horizon" } });
+
+    await waitFor(() => expect(mocks.loaderVersions).toHaveBeenCalledWith("horizon", "26.3"));
+    const build = await screen.findByRole("combobox", { name: "Build Horizon" });
+    await waitFor(() => expect(build).toHaveValue("nightly"));
+    expect(screen.queryByRole("combobox", { name: "Version de Java" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mémoire maximale/)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Nom de l’instance" }), { target: { value: "Horizon" } });
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’instance" }));
+    await waitFor(() => expect(mocks.createInstance).toHaveBeenCalledWith(expect.objectContaining({
+      loader: "horizon", versionId: "26.3", loaderVersion: "nightly",
+    })));
+  });
+
   it("explique un échec de chargement et permet une nouvelle tentative", async () => {
     mocks.versions.mockRejectedValueOnce("Connexion au manifeste impossible").mockResolvedValueOnce([release]);
     renderForm();

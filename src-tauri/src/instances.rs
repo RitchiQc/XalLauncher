@@ -41,7 +41,21 @@ fn validate(input: &InstanceInput) -> Result<()> {
     if !valid_version(input.version_id.trim()) {
         return Err(AppError::new("Version de Minecraft invalide"));
     }
-    if input.loader != Loader::Vanilla
+    if input.loader == Loader::Horizon {
+        if input.version_id.trim() != crate::horizon::HORIZON_MINECRAFT {
+            return Err(AppError::new(format!(
+                "Horizon nécessite Minecraft Java Edition {}",
+                crate::horizon::HORIZON_MINECRAFT
+            )));
+        }
+        if input
+            .loader_version
+            .as_deref()
+            .is_some_and(|version| !valid_version(version))
+        {
+            return Err(AppError::new("Version de Horizon invalide"));
+        }
+    } else if input.loader != Loader::Vanilla
         && !valid_version(input.loader_version.as_deref().unwrap_or(""))
     {
         return Err(AppError::new("Version du modloader invalide"));
@@ -73,12 +87,15 @@ pub fn create_instance(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Instance> {
     validate(&input)?;
+    let loader_version = input
+        .loader_version
+        .or_else(|| (input.loader == Loader::Horizon).then(|| "nightly".to_string()));
     let instance = Instance {
         id: uuid::Uuid::new_v4().to_string(),
         name: input.name.trim().into(),
         version_id: input.version_id,
         loader: input.loader,
-        loader_version: input.loader_version,
+        loader_version,
         color: input.color,
         memory_min: input.memory_min,
         memory_max: input.memory_max,
@@ -123,12 +140,15 @@ pub fn update_instance(
         existing.icon_url.clone(),
         existing.icon_file.clone(),
     );
+    let loader_version = input
+        .loader_version
+        .or_else(|| (input.loader == Loader::Horizon).then(|| "nightly".to_string()));
     *existing = Instance {
         id,
         name: input.name.trim().into(),
         version_id: input.version_id,
         loader: input.loader,
-        loader_version: input.loader_version,
+        loader_version,
         color: input.color,
         memory_min: input.memory_min,
         memory_max: input.memory_max,
@@ -361,6 +381,17 @@ mod tests {
             assert!(!valid_java_major(major));
             assert!(super::validate(&input(Some(major))).is_err());
         }
+    }
+
+    #[test]
+    fn horizon_requires_minecraft_26_3() {
+        let mut horizon = input(None);
+        horizon.loader = Loader::Horizon;
+        horizon.loader_version = Some("nightly".into());
+        horizon.version_id = "1.21.4".into();
+        assert!(super::validate(&horizon).is_err());
+        horizon.version_id = "26.3".into();
+        assert!(super::validate(&horizon).is_ok());
     }
 
     #[test]

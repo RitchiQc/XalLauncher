@@ -38,6 +38,9 @@ pub async fn prepare(
                 .to_string();
             Ok((id, profile))
         }
+        Loader::Horizon => Err(AppError::new(
+            "Horizon utilise son propre moteur de lancement",
+        )),
         Loader::Forge | Loader::Neoforge => {
             if let Ok(id) = find_installed_profile(store, instance) {
                 let path = store

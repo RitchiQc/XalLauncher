@@ -16,7 +16,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
-fn emit(app: &AppHandle, label: &str, current: u64, total: u64) {
+pub(crate) fn emit(app: &AppHandle, label: &str, current: u64, total: u64) {
     let _ = app.emit(
         "download-progress",
         ProgressEvent {
@@ -114,7 +114,7 @@ fn value_arguments(values: Option<&Vec<Value>>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-async fn profile_chain(client: &reqwest::Client, profile: Value) -> Result<Vec<Value>> {
+pub(crate) async fn profile_chain(client: &reqwest::Client, profile: Value) -> Result<Vec<Value>> {
     let mut chain = vec![profile.clone()];
     if let Some(parent) = profile["inheritsFrom"].as_str() {
         let mut parents =
@@ -131,7 +131,7 @@ struct AssetJob {
     sha1: String,
 }
 
-async fn download_assets(
+pub(crate) async fn download_assets(
     client: &reqwest::Client,
     store: &Store,
     base: &Value,
@@ -212,7 +212,7 @@ async fn download_assets(
     Ok(())
 }
 
-async fn download_libraries(
+pub(crate) async fn download_libraries(
     client: &reqwest::Client,
     store: &Store,
     profiles: &[Value],
@@ -358,7 +358,11 @@ fn extract_native(archive: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn download_logging(client: &reqwest::Client, store: &Store, profile: &Value) -> Result<()> {
+pub(crate) async fn download_logging(
+    client: &reqwest::Client,
+    store: &Store,
+    profile: &Value,
+) -> Result<()> {
     let file = &profile["logging"]["client"]["file"];
     if let (Some(url), Some(id)) = (file["url"].as_str(), file["id"].as_str()) {
         let path = store.root().join("assets").join("log_configs").join(id);
@@ -426,7 +430,7 @@ fn quick_play_supported(profiles: &[Value]) -> bool {
     })
 }
 
-fn normalize_server(value: &str) -> Result<(String, u16)> {
+pub(crate) fn normalize_server(value: &str) -> Result<(String, u16)> {
     let value = value.trim();
     if value.is_empty()
         || value.len() > 255
@@ -489,6 +493,17 @@ pub async fn launch_instance(
     let instance = state.store.instance(&id)?;
     emit(&app, "Vérification de la session", 0, 1);
     let (account, token) = valid_token(&state, &account_id).await?;
+    if instance.loader == crate::models::Loader::Horizon {
+        return crate::horizon::launch(
+            &state,
+            &app,
+            &instance,
+            &account,
+            &token,
+            server_override.as_deref(),
+        )
+        .await;
+    }
     let base_profile = version_json(&state.client, &instance.version_id).await?;
     let required_java = base_profile["javaVersion"]["majorVersion"]
         .as_u64()
@@ -763,7 +778,7 @@ pub async fn launch_instance(
         id.clone(),
         state.store.clone(),
         state.processes.clone(),
-        argument_file,
+        Some(argument_file),
     );
     let mut instances = state.store.instances()?;
     if let Some(stored) = instances.iter_mut().find(|item| item.id == id) {
@@ -778,7 +793,7 @@ pub async fn launch_instance(
     Ok(LaunchResult { pid, started_at })
 }
 
-fn forward_logs(
+pub(crate) fn forward_logs(
     reader: impl Read + Send + 'static,
     app: AppHandle,
     id: String,
@@ -805,13 +820,13 @@ fn forward_logs(
     });
 }
 
-fn monitor_process(
+pub(crate) fn monitor_process(
     child: Arc<Mutex<Child>>,
     app: AppHandle,
     id: String,
     store: Store,
     processes: Arc<Mutex<std::collections::HashMap<String, Arc<Mutex<Child>>>>>,
-    argument_file: PathBuf,
+    argument_file: Option<PathBuf>,
 ) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
@@ -828,7 +843,9 @@ fn monitor_process(
         if let Ok(mut processes) = processes.lock() {
             processes.remove(&id);
         }
-        let _ = fs::remove_file(argument_file);
+        if let Some(argument_file) = argument_file {
+            let _ = fs::remove_file(argument_file);
+        }
         let _ = app.emit(
             "game-exit",
             serde_json::json!({

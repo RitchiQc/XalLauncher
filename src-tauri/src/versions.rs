@@ -129,6 +129,7 @@ pub async fn list_loader_versions(
         }
         Loader::Forge => forge_versions(&state.client, &version_id).await,
         Loader::Neoforge => neoforge_versions(&state.client, &version_id).await,
+        Loader::Horizon => crate::horizon::list_builds(&state.client).await,
     }
 }
 
