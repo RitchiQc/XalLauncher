@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Check, Download, FolderOpen, HardDrive, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { Check, Download, ExternalLink, FolderOpen, HardDrive, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
 import { Button, PageHeader, ProgressBar, Toggle } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
 import { confirmAction } from "@/lib/dialog";
 import { findUpdate } from "@/lib/updates";
 import { useLauncher } from "@/state/LauncherContext";
-import type { StorageInfo } from "@/types";
+import type { CurseforgeKeyStatus, StorageInfo } from "@/types";
 
 const accents = ["#8b5cf6", "#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899"];
 
@@ -19,12 +20,34 @@ export function SettingsPage() {
   const [updating, setUpdating] = useState(false);
   const [storage, setStorage] = useState<StorageInfo>();
   const [storageBusy, setStorageBusy] = useState(false);
+  const [curseforge, setCurseforge] = useState<CurseforgeKeyStatus>();
+  const [curseforgeKey, setCurseforgeKey] = useState("");
+  const [curseforgeBusy, setCurseforgeBusy] = useState(false);
   useEffect(() => { void api.storageInfo().then(setStorage).catch(() => undefined); }, []);
+  useEffect(() => { void api.curseforgeKeyStatus().then(setCurseforge).catch(() => undefined); }, []);
   const dirty = JSON.stringify(form) !== JSON.stringify(settings);
   function patch<K extends keyof typeof form>(key: K, value: (typeof form)[K]) { setForm((current) => ({ ...current, [key]: value })); }
   async function save() {
     setSaving(true); const result = await perform(() => api.saveSettings(form), "Paramètres enregistrés"); setSaving(false);
     if (result) setSettings(result);
+  }
+  async function saveCurseforgeKey() {
+    if (!curseforgeKey.trim()) return;
+    setCurseforgeBusy(true);
+    const result = await perform(() => api.setCurseforgeKey(curseforgeKey.trim()), "Clé CurseForge enregistrée");
+    setCurseforgeBusy(false);
+    if (result) { setCurseforge(result); setCurseforgeKey(""); }
+  }
+  async function clearCurseforgeKey() {
+    setCurseforgeBusy(true);
+    const result = await perform(() => api.clearCurseforgeKey(), "Clé CurseForge supprimée");
+    setCurseforgeBusy(false);
+    if (result) setCurseforge(result);
+  }
+  async function testCurseforgeKey() {
+    setCurseforgeBusy(true);
+    await perform(() => api.testCurseforgeKey(), "Connexion CurseForge validée");
+    setCurseforgeBusy(false);
   }
   async function checkUpdate() {
     setUpdateStatus("Recherche d’une mise à jour…"); setUpdateProgress(undefined); setUpdating(true);
@@ -81,11 +104,17 @@ export function SettingsPage() {
       <Toggle checked={form.reducedMotion} onChange={(value) => patch("reducedMotion", value)} label="Réduire les animations et transitions" />
     </div></section>
     <section className="settings-section panel"><header><Download /><div><h2>Téléchargements</h2><p>Contrôlez la charge réseau pendant l’installation du jeu et des contenus.</p></div></header><div className="settings-body"><label className="setting-row"><span><strong>Tâches simultanées</strong><small>Entre 1 et 32 téléchargements parallèles.</small></span><div className="number-control"><input type="range" min={1} max={32} value={form.downloadConcurrency} onChange={(event) => patch("downloadConcurrency", Number(event.target.value))} /><strong>{form.downloadConcurrency}</strong></div></label></div></section>
+    <section className="settings-section panel"><header><KeyRound /><div><h2>CurseForge</h2><p>Recherchez et installez les mods, resource packs, shaders et modpacks de CurseForge.</p></div></header><div className="settings-body">
+      <div className="setting-row"><span><strong>Clé API</strong><small>{curseforge?.source === "builtin" ? "CurseForge est activé pour cette version : la clé est intégrée au launcher et n’est jamais affichée." : curseforge?.configured ? `Configurée via ${curseforge.source === "environment" ? "la variable XAL_CURSEFORGE_API_KEY" : "le Coffre d’identification Windows"}.` : "Aucune clé configurée. Cette version de développement nécessite une clé personnelle."}</small><small>{curseforge?.source === "builtin" ? "Les self-builds sans clé intégrée peuvent utiliser le champ ci-dessous." : "La clé n’est jamais renvoyée à l’interface ni écrite dans settings.json."}</small></span><span className="info-pill">{curseforge?.configured ? <><Check size={14} />{curseforge.source === "builtin" ? "Intégrée" : "Prête"}</> : "Non configurée"}</span></div>
+      {curseforge === undefined ? <div className="panel-loading"><RefreshCw className="spin" />Vérification de la clé CurseForge…</div> : curseforge.source === "builtin" ? null : <>
+        <label className="field"><span>Clé API personnelle</span><input type="password" autoComplete="off" value={curseforgeKey} onChange={(event) => setCurseforgeKey(event.target.value)} placeholder={curseforge?.configured ? "Clé enregistrée — collez une nouvelle clé pour la remplacer" : "Collez votre clé CurseForge"} /><small>Obtenez une clé depuis <button type="button" className="link-button" onClick={() => void openUrl("https://console.curseforge.com/?#/api-keys")}>console.curseforge.com <ExternalLink size={11} /></button>. Utilisation soumise aux conditions de CurseForge.</small></label>
+        <div className="storage-actions curseforge-actions"><Button onClick={() => void saveCurseforgeKey()} loading={curseforgeBusy} disabled={!curseforgeKey.trim()}>Enregistrer la clé</Button><Button variant="secondary" onClick={() => void testCurseforgeKey()} disabled={!curseforge?.configured || curseforgeBusy}>Tester</Button>{curseforge?.configured && curseforge.source !== "environment" ? <Button variant="ghost" onClick={() => void clearCurseforgeKey()} disabled={curseforgeBusy}>Supprimer</Button> : null}</div>
+      </>}
+    </div></section>
     <section className="settings-section panel"><header><HardDrive /><div><h2>Stockage</h2><p>Choisissez le dossier des instances, téléchargements et sauvegardes.</p></div></header><div className="settings-body">
       <div className="setting-row"><span><strong>Dossier des données</strong><small className="storage-path">{storage?.dataDirectory ?? "Chargement…"}</small><small>Le dossier choisi dans l’installeur ne concerne que les fichiers du programme.</small></span><div className="storage-actions"><Button variant="secondary" onClick={() => void openStorage()} disabled={!storage}><FolderOpen size={16} />Ouvrir</Button><Button onClick={() => void changeStorage()} loading={storageBusy} disabled={!storage}>Changer…</Button></div></div>
       {storage && storage.installDataDirectory !== storage.dataDirectory ? <div className="setting-row"><span><strong>Dossier d’installation</strong><small className="storage-path">{storage.installDataDirectory}</small></span><Button variant="secondary" onClick={() => void changeStorage(storage.installDataDirectory)} disabled={storageBusy}>Utiliser</Button></div> : null}
     </div></section>
-    <section className="settings-section panel"><header><KeyRound /><div><h2>Authentification Microsoft</h2><p>Identifiant public de votre application Microsoft Entra.</p></div></header><div className="settings-body"><label className="field"><span>Application (client) ID</span><input value={form.microsoftClientId} onChange={(event) => patch("microsoftClientId", event.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /><small>Activez « Autoriser le flux de code d’appareil » pour cette application publique. Aucun secret client n’est stocké.</small></label></div></section>
     <section className="settings-section panel"><header><RefreshCw /><div><h2>Mises à jour du launcher</h2><p>Packages vérifiés par signature avant installation.</p></div></header><div className="settings-body"><Toggle checked={form.autoUpdate} onChange={(value) => patch("autoUpdate", value)} label="Rechercher les nouvelles versions au démarrage" /><div className="setting-row"><span><strong>Canal stable</strong><small>{updateStatus || "Vérifiez manuellement les Releases GitHub."}</small></span><Button variant="secondary" onClick={() => void checkUpdate()} loading={updating} disabled={updating}><RefreshCw size={16} />Vérifier</Button></div>{updateProgress !== undefined ? <ProgressBar value={updateProgress} label="Mise à jour" /> : null}</div></section>
     <section className="settings-section panel about-section"><header><MonitorCog /><div><h2>À propos</h2><p>XalLauncher {__APP_VERSION__} · Windows</p></div></header><div className="settings-body"><p>Développé par <strong>Xaltar Studio</strong> avec Tauri, React et Rust. Minecraft est une marque de Mojang Synergies AB. XalLauncher n’est pas affilié à Mojang ou Microsoft.</p></div></section>
   </div>;

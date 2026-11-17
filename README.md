@@ -32,7 +32,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - RAM, **version de Java** (automatique ou forcée), arguments JVM, résolution, plein écran et serveur au démarrage par instance.
 - Une version Java inférieure au minimum exigé par Minecraft est refusée au lancement avec un message explicite.
 - Connexion directe à un serveur au lancement : `--quickPlayMultiplayer` sur Minecraft 1.20+, avec repli sur `--server` / `--port` pour les versions antérieures.
-- Image de couverture par instance : icône Modrinth automatique pour les modpacks installés depuis le catalogue, image personnelle (PNG, JPEG ou WebP) importable depuis la page de l’instance, couverture spatiale par défaut issue du panorama XalLauncher et logo XalLauncher en repli.
+- Image de couverture par instance : icône du projet (Modrinth ou CurseForge) pour les modpacks installés depuis le catalogue, image personnelle (PNG, JPEG ou WebP) importable depuis la page de l’instance, couverture spatiale par défaut issue du panorama XalLauncher et logo XalLauncher en repli.
 - Dossier de données configurable (instances, bibliothèques, assets, runtimes, journaux, sauvegardes) avec déplacement des données existantes et redémarrage automatique.
 - Classpaths longs via fichier d’arguments Java sur les runtimes compatibles.
 - Console en direct, journal local, arrêt du processus et temps de jeu.
@@ -54,16 +54,16 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 
 ### Contenu
 
-- Recherche Modrinth de mods, resource packs et shaders directement depuis chaque instance.
+- Recherche **Modrinth et CurseForge** de mods, resource packs et shaders directement depuis chaque instance, avec choix du fournisseur.
 - Marché Horizon pour les instances Horizon : mods `.hmod`, resource packs et shaders compatibles avec Minecraft 26.3, sans exposition des mods Java ou des mods natifs Horizon.
-- Recherche de modpacks depuis la Bibliothèque, avec création automatique d’une nouvelle instance isolée.
-- Scroll infini dans l’explorateur Modrinth (24 résultats par page, chargement automatique) et tri par pertinence, téléchargements, suivis, nouveautés ou dernière mise à jour.
+- Recherche de modpacks **Modrinth et CurseForge** depuis la Bibliothèque, avec création automatique d’une nouvelle instance isolée.
+- Scroll infini dans les explorateurs (24 résultats par page, chargement automatique) et tri par pertinence, téléchargements, popularité, nouveautés ou dernière mise à jour.
 - L’explorateur reste ouvert sur la page « Ajouter » après une installation, pour enchaîner plusieurs contenus sans revenir à la liste.
 - Filtrage par version de Minecraft et modloader, avec choix de la publication exacte à installer, y compris une version plus ancienne.
-- Installation des dépendances obligatoires, respect de leurs éventuelles versions imposées et remplacement des anciennes versions d’un projet.
+- Installation des dépendances obligatoires CurseForge et Modrinth, respect de leurs éventuelles versions imposées et remplacement des anciennes versions d’un projet.
 - Identification des contenus et versions déjà installés dans l’explorateur, sans téléchargement redondant.
 - Téléchargements parallèles des mods et dépendances selon le nombre de tâches configuré, avec progression globale.
-- Installation de la dernière publication d’un modpack Modrinth (avec récupération de l’icône du projet) et import de fichiers `.mrpack`.
+- Installation de la dernière publication d’un modpack Modrinth ou CurseForge (avec récupération de l’icône du projet), import de fichiers `.mrpack` et des archives `.zip` CurseForge.
 - Import de contenus locaux **par lot** : plusieurs `.jar` ou `.zip` à la fois, ou glisser-déposer dans l’onglet Mods / Resource packs / Shaders.
 - Activation/désactivation et suppression de contenus locaux.
 - Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks : code Java exécutable pour Minecraft, contenu `.hmod` sandboxé mais fourni par un tiers pour Horizon.
@@ -75,13 +75,14 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 | Format | Extension | Import | Export |
 |---|---|---|---|
 | Modrinth | `.mrpack` | ✅ | ✅ (format d’export) |
+| CurseForge | `.zip` | ✅ (clé API requise si le pack contient des fichiers) | — |
 | Prism Launcher / MultiMC | `.zip` ou dossier | ✅ | — |
 | XalLauncher | `.mrpack` | ✅ | ✅ |
 
 - L’import détecte le format **par le contenu** de l’archive, pas par son extension.
 - Un pack exporté par XalLauncher contient `modrinth.index.json`, tous les fichiers dans `overrides/` et `xallauncher.json` (RAM, version de Java, résolution, JVM, modules, serveur). Il se réimporte sans téléchargement dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App.
 - Les mondes et les captures sont exclus par défaut à l’export ; deux options permettent de les inclure.
-- **Formats non pris en charge** : CurseForge `.zip` (le téléchargement de ses mods exige une clé API CurseForge), ATLauncher, FTB, Technic et un dossier `.minecraft` brut. Pour un pack CurseForge, importez-le dans Prism Launcher, puis importez le dossier de l’instance Prism dans XalLauncher.
+- **Formats non pris en charge** : ATLauncher, FTB, Technic et un dossier `.minecraft` brut.
 - Le pack de branding XalLauncher, les journaux, les rapports de crash et les caches sont toujours exclus de l’export.
 
 ### Modules par instance
@@ -158,16 +159,18 @@ npm.cmd run tauri build
 
 ## Configuration Microsoft Entra
 
+Les joueurs n’ont aucune configuration à effectuer : l’identifiant public de l’application XalLauncher est intégré au launcher. Les étapes suivantes concernent uniquement les développeurs qui souhaitent utiliser leur propre inscription Microsoft Entra.
+
 1. Ouvrez Microsoft Entra et créez une inscription d’application.
 2. Choisissez la prise en charge des **comptes personnels Microsoft**.
 3. Configurez l’application comme client public et activez le **flux de code d’appareil**.
 4. Pour le **mode navigateur**, ouvrez `Authentification > Ajouter une plateforme > Applications mobiles et de bureau`, puis ajoutez l’URI de redirection **`http://localhost`** (sans port ni chemin) et enregistrez. Le port est ignoré par Microsoft pour les URI `localhost`.
-5. Copiez l’**Application (client) ID** dans `Paramètres > Authentification Microsoft`.
+5. Pour utiliser cette inscription, définissez son **Application (client) ID** dans `XAL_MICROSOFT_CLIENT_ID` au moment du build (voir ci-dessous).
 6. Ajoutez ensuite un compte depuis `Comptes & capes`.
 
 Le mode navigateur ouvre directement la page Microsoft avec `prompt=select_account` : le sélecteur de comptes s’affiche toujours, y compris l’option « Utiliser un autre compte ». Il est proposé via le bouton **« Utiliser un autre compte Microsoft »** dans la fenêtre de connexion ; le code d’appareil reste le mode par défaut.
 
-L’identifiant public de l’application XalLauncher est intégré par défaut : les joueurs n’ont pas besoin de créer leur propre application Entra. Pour utiliser une autre inscription, remplace-le dans les paramètres ou définis `XAL_MICROSOFT_CLIENT_ID` à la compilation. Aucun secret client n’est utilisé.
+L’identifiant public de l’application XalLauncher est intégré par défaut : les joueurs n’ont pas besoin de créer leur propre application Entra ni de le configurer dans le launcher. Pour utiliser une autre inscription, définis `XAL_MICROSOFT_CLIENT_ID` à la compilation. Cet identifiant est **public** : ce n’est pas un secret et il ne faut jamais utiliser de secret client Microsoft dans une application desktop.
 
 Pour distribuer le launcher sans demander de configuration aux joueurs, définis cette variable lors du build :
 
@@ -177,6 +180,19 @@ npm.cmd run tauri build
 ```
 
 Pour les Releases GitHub, crée la **variable** de dépôt `XAL_MICROSOFT_CLIENT_ID` dans `Settings > Secrets and variables > Actions > Variables`. Le workflow de Release l’intégrera automatiquement comme valeur par défaut. Chaque joueur se connectera ensuite avec son propre compte Microsoft, sans créer sa propre application Entra.
+
+## Configuration CurseForge
+
+XalLauncher prend en charge le catalogue CurseForge pour les mods, resource packs, shaders et modpacks. Les **Releases officielles intègrent une clé CurseForge dédiée** au moment du build, via le secret GitHub Actions `XAL_CURSEFORGE_API_KEY` : les joueurs n’ont donc **rien à configurer** et aucune clé n’est affichée dans l’interface.
+
+Pour un self-build ou une version de développement sans clé intégrée, deux solutions :
+
+1. Définir `XAL_CURSEFORGE_API_KEY` dans le terminal avant `npm run tauri build` ;
+2. ou ouvrir `Paramètres > CurseForge`, coller une clé personnelle (disponible sur `https://console.curseforge.com/?#/api-keys`) et cliquer sur **Enregistrer la clé**. Elle est alors conservée dans le **Coffre d’identification Windows**, jamais renvoyée à l’interface et jamais écrite dans `settings.json`.
+
+La clé intégrée est compilée dans le binaire : elle est invisible dans l’interface, mais un utilisateur avancé peut techniquement l’extraire. Il faut donc une clé dédiée à XalLauncher, surveiller le quota et pouvoir la remplacer sans modifier le code. Les conditions de CurseForge imposent une clé non transférable : vérifiez auprès de CurseForge/Overwolf que votre clé est autorisée pour une distribution publique. Le modèle « clé du projet intégrée aux builds officiels, override possible pour les self-builds » est celui utilisé par plusieurs launchers open source.
+
+Les réponses de l’API ne sont pas mises en cache de façon persistante : seules les métadonnées minimales des contenus installés sont conservées dans leurs sidecars.
 
 ## Dépannage de la connexion Microsoft
 
@@ -242,7 +258,9 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src-tauri/src/launch.rs` : préparation et processus Minecraft.
 - `src-tauri/src/horizon.rs` : builds Nightly, préparation, JDK 25 et lancement natif Horizon.
 - `src-tauri/src/loaders.rs` : Fabric, Quilt, Forge et NeoForge.
-- `src-tauri/src/providers/` : intégration Modrinth et registre Horizon.
+- `src-tauri/src/providers/` : intégration Modrinth, catalogue CurseForge et registre Horizon.
+- `src-tauri/src/providers/curseforge/pack.rs` : import des modpacks CurseForge (`.zip` et catalogue) et overrides.
+- `src-tauri/src/secrets.rs` : clé API CurseForge dans le Coffre d’identification Windows.
 - `src-tauri/src/content.rs` : contenu local.
 - `src-tauri/src/modpacks.rs` : archives `.mrpack`.
 - `src-tauri/src/backup.rs` : sauvegardes des mondes.
@@ -258,7 +276,10 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 
 - Windows x64 uniquement ; macOS et Linux ne sont pas encore pris en charge.
 - Les très anciennes versions de Forge peuvent nécessiter des procédures spécifiques non couvertes.
-- CurseForge n’est pas intégré sans clé API et validation de ses conditions.
+- CurseForge est activé dans les Releases officielles par une clé intégrée au build. Les self-builds sans secret doivent fournir une clé dans les paramètres ou via `XAL_CURSEFORGE_API_KEY`. La clé est extractible du binaire et son quota est partagé par tous les utilisateurs ; utilisez une clé dédiée et prévoyez sa rotation.
+- L’utilisation d’une clé intégrée pour une distribution publique doit être confirmée avec CurseForge/Overwolf ; XalLauncher ne peut pas garantir l’autorisation contractuelle de ce modèle.
+- Les mods dont l’auteur interdit la distribution via l’API CurseForge, ainsi que les modpacks contenant un fichier requis dans ce cas, ne peuvent pas être téléchargés ; XalLauncher affiche alors une erreur explicite.
+- La recherche et les dépendances CurseForge ne sont pas mises à jour automatiquement ; aucun fingerprint, monde CurseForge ou cache persistant des réponses API n’est géré.
 - Le canal de mise à jour lit `latest.json` sans authentification : le dépôt (ou l’hébergement du manifeste) doit être public, sinon la vérification échoue.
 - Essential n’a pas d’intégration dédiée ; il reste installable comme un mod Modrinth ordinaire.
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.
@@ -279,4 +300,4 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 
 ## Mentions
 
-XalLauncher n’est pas affilié à Mojang, Microsoft, Modrinth ou Horizon. Minecraft est une marque de Mojang Synergies AB. Horizon est un projet open source non officiel ; ses binaires sont téléchargés depuis ses Releases GitHub et restent soumis à leurs licences (LGPL-3.0 pour le projet Horizon, licences propres à ses dépendances). Les contenus restent soumis aux licences de leurs auteurs et plateformes.
+XalLauncher n’est pas affilié à Mojang, Microsoft, Modrinth, CurseForge ou Horizon. Minecraft est une marque de Mojang Synergies AB. CurseForge et Overwolf sont des marques de leurs propriétaires respectifs ; les données et téléchargements CurseForge sont fournis par son API et soumis à ses conditions d’utilisation. Horizon est un projet open source non officiel ; ses binaires sont téléchargés depuis ses Releases GitHub et restent soumis à leurs licences (LGPL-3.0 pour le projet Horizon, licences propres à ses dépendances). Les contenus restent soumis aux licences de leurs auteurs et plateformes.

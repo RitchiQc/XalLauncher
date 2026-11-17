@@ -72,11 +72,7 @@ impl Store {
     }
 
     pub fn settings(&self) -> Result<AppSettings> {
-        let mut settings: AppSettings = self.read("settings.json", AppSettings::default())?;
-        if settings.microsoft_client_id.is_empty() {
-            settings.microsoft_client_id = AppSettings::default().microsoft_client_id;
-        }
-        Ok(settings)
+        self.read("settings.json", AppSettings::default())
     }
     pub fn save_settings(&self, value: &AppSettings) -> Result<()> {
         self.write("settings.json", value)

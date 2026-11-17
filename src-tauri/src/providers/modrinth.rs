@@ -2,6 +2,7 @@ use crate::download::{download_file_with_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::{ensure_success, get_json};
 use crate::models::{ContentEntry, Loader, ProgressEvent, ProjectHit};
+use crate::providers::common::{self, ContentMetadata};
 use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -102,17 +103,6 @@ fn loader_name(loader: Loader) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContentMetadata {
-    pub project_id: String,
-    pub project_title: String,
-    pub version_id: String,
-    pub icon_url: Option<String>,
-    #[serde(default)]
-    pub provider: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModrinthVersion {
@@ -206,67 +196,6 @@ struct InstallJob {
     project: Value,
     version: Value,
     project_type: String,
-}
-
-fn installed_content(
-    game_dir: &std::path::Path,
-    project_id: &str,
-    version_id: Option<&str>,
-) -> Option<ContentEntry> {
-    for (kind, folder) in [
-        ("mod", "mods"),
-        ("resourcepack", "resourcepacks"),
-        ("shader", "shaderpacks"),
-    ] {
-        let directory = game_dir.join(folder);
-        let Ok(entries) = std::fs::read_dir(&directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with('.') || !name.ends_with(".xal.json") {
-                continue;
-            }
-            let Ok(bytes) = std::fs::read(entry.path()) else {
-                continue;
-            };
-            let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
-                continue;
-            };
-            if metadata.project_id != project_id
-                || version_id.is_some_and(|id| metadata.version_id != id)
-            {
-                continue;
-            }
-            let base = name.trim_start_matches('.').strip_suffix(".xal.json")?;
-            let enabled_path = directory.join(base);
-            let disabled_path = directory.join(format!("{base}.disabled"));
-            let (path, enabled) = if enabled_path.is_file() {
-                (enabled_path, true)
-            } else if disabled_path.is_file() {
-                (disabled_path, false)
-            } else {
-                continue;
-            };
-            let file_meta = path.metadata().ok()?;
-            return Some(ContentEntry {
-                file_name: path.file_name()?.to_string_lossy().into_owned(),
-                kind: kind.into(),
-                enabled,
-                size: file_meta.len(),
-                modified_at: file_meta
-                    .modified()
-                    .map(chrono::DateTime::<chrono::Utc>::from)
-                    .unwrap_or_else(|_| chrono::Utc::now()),
-                project_id: Some(metadata.project_id),
-                project_title: Some(metadata.project_title),
-                version_id: Some(metadata.version_id),
-                icon_url: metadata.icon_url,
-                provider: metadata.provider,
-            });
-        }
-    }
-    None
 }
 
 fn ensure_version_compatible(
@@ -452,9 +381,12 @@ fn resolve_project_tree<'a>(
         if !visited.insert(project_id.to_string()) {
             return Ok(None);
         }
-        if let Some(installed) =
-            installed_content(&state.store.game_dir(instance_id), project_id, version_id)
-        {
+        if let Some(installed) = common::installed_content(
+            &state.store.game_dir(instance_id),
+            "modrinth",
+            project_id,
+            version_id,
+        ) {
             return Ok(Some(installed));
         }
         let instance = state.store.instance(instance_id)?;
@@ -489,36 +421,6 @@ fn resolve_project_tree<'a>(
         });
         Ok(None)
     })
-}
-
-fn remove_previous_versions(directory: &std::path::Path, project_id: &str, keep_file: &str) {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with('.') || !name.ends_with(".xal.json") {
-            continue;
-        }
-        let Ok(bytes) = std::fs::read(entry.path()) else {
-            continue;
-        };
-        let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
-            continue;
-        };
-        if metadata.project_id != project_id {
-            continue;
-        }
-        let Some(file_name) = name.trim_start_matches('.').strip_suffix(".xal.json") else {
-            continue;
-        };
-        if file_name == keep_file {
-            continue;
-        }
-        let _ = std::fs::remove_file(entry.path());
-        let _ = std::fs::remove_file(directory.join(file_name));
-        let _ = std::fs::remove_file(directory.join(format!("{file_name}.disabled")));
-    }
 }
 
 async fn install_version(
@@ -572,8 +474,9 @@ async fn install_version(
         project["title"].as_str().unwrap_or(file_name),
     )
     .await?;
-    remove_previous_versions(
+    common::remove_previous_versions(
         &game_dir.join(folder),
+        "modrinth",
         project["id"].as_str().unwrap_or(""),
         file_name,
     );
@@ -584,8 +487,7 @@ async fn install_version(
         icon_url: project["icon_url"].as_str().map(str::to_string),
         provider: Some("modrinth".into()),
     };
-    let sidecar = game_dir.join(folder).join(format!(".{file_name}.xal.json"));
-    std::fs::write(sidecar, serde_json::to_vec_pretty(&metadata)?)?;
+    common::write_sidecar(&game_dir.join(folder), file_name, &metadata)?;
     Ok(ContentEntry {
         file_name: file_name.into(),
         kind: project_type.into(),
@@ -602,7 +504,8 @@ async fn install_version(
 
 #[cfg(test)]
 mod tests {
-    use super::{installed_content, select_version, ContentMetadata};
+    use super::select_version;
+    use crate::providers::common::{installed_content, ContentMetadata};
     use serde_json::json;
 
     #[test]
@@ -645,10 +548,11 @@ mod tests {
         )
         .unwrap();
 
-        let installed = installed_content(directory.path(), "sodium", Some("new")).unwrap();
+        let installed =
+            installed_content(directory.path(), "modrinth", "sodium", Some("new")).unwrap();
         assert_eq!(installed.file_name, "sodium.jar.disabled");
         assert!(!installed.enabled);
-        assert!(installed_content(directory.path(), "sodium", Some("old")).is_none());
+        assert!(installed_content(directory.path(), "modrinth", "sodium", Some("old")).is_none());
     }
 
     #[test]
@@ -670,6 +574,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(installed_content(directory.path(), "pack", Some("v1")).is_some());
+        assert!(installed_content(directory.path(), "modrinth", "pack", Some("v1")).is_some());
     }
 }

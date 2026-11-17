@@ -95,7 +95,7 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
       <div className="content-icon">{item.iconUrl ? <img src={item.iconUrl} alt="" /> : kind === "world" ? <Image /> : <FileBox />}</div>
       <div className="content-info"><strong>{item.projectTitle ?? item.fileName}</strong><span>{item.fileName} · {formatBytes(item.size)}</span></div>
       <span className="content-date">{formatDate(item.modifiedAt)}</span>
-      {item.provider === "horizon" ? <span className="provider-badge"><Download size={12} />Horizon</span> : item.projectId ? <span className="provider-badge"><Download size={12} />Modrinth</span> : null}
+      {item.provider === "horizon" ? <span className="provider-badge"><Download size={12} />Horizon</span> : item.provider === "curseforge" ? <span className="provider-badge"><Download size={12} />CurseForge</span> : item.projectId ? <span className="provider-badge"><Download size={12} />Modrinth</span> : null}
       {!['world', 'screenshot'].includes(kind) ? <Button variant={item.enabled ? "secondary" : "ghost"} className="icon-button" title={item.enabled ? "Désactiver" : "Activer"} onClick={() => void toggle(item)}><Power size={17} /></Button> : null}
       <Button variant="ghost" className="icon-button danger-icon" title="Supprimer" onClick={() => void remove(item)}><Trash2 size={17} /></Button>
     </article>)}</div>}</>}

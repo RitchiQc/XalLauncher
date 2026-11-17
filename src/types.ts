@@ -3,6 +3,7 @@ export type LoginMode = "device" | "browser";
 export type ContentKind = "mod" | "resourcepack" | "shader" | "world";
 export type Theme = "dark" | "light" | "space";
 export type SearchIndex = "relevance" | "downloads" | "follows" | "newest" | "updated";
+export type ContentProvider = "modrinth" | "horizon" | "curseforge";
 
 export interface ModuleState {
   performance: boolean;
@@ -123,7 +124,6 @@ export interface AppSettings {
   accent: string;
   reducedMotion: boolean;
   downloadConcurrency: number;
-  microsoftClientId: string;
   discordEnabled: boolean;
   autoUpdate: boolean;
 }
@@ -138,6 +138,11 @@ export interface StorageInfo {
   instanceCount: number;
 }
 
+export interface CurseforgeKeyStatus {
+  configured: boolean;
+  source?: "vault" | "environment" | "builtin";
+}
+
 export interface ContentEntry {
   fileName: string;
   kind: ContentKind;
@@ -148,7 +153,7 @@ export interface ContentEntry {
   projectTitle?: string;
   versionId?: string;
   iconUrl?: string;
-  provider?: "modrinth" | "horizon";
+  provider?: ContentProvider;
 }
 
 export interface ImportFailure {
@@ -191,7 +196,7 @@ export interface ProjectHit {
   follows: number;
   projectType: string;
   versions: string[];
-  provider?: "modrinth" | "horizon";
+  provider?: ContentProvider;
 }
 
 export interface ModrinthVersion {

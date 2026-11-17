@@ -1,7 +1,7 @@
 use crate::error::{AppError, Result};
 use crate::models::{ContentEntry, Loader};
+use crate::providers::common::ContentMetadata;
 use crate::providers::horizon::{mod_enabled, mod_id_from_file, set_mod_enabled};
-use crate::providers::modrinth::ContentMetadata;
 use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Component, Path, PathBuf};

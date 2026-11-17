@@ -175,7 +175,6 @@ pub struct AppSettings {
     pub accent: String,
     pub reduced_motion: bool,
     pub download_concurrency: usize,
-    pub microsoft_client_id: String,
     pub discord_enabled: bool,
     pub auto_update: bool,
 }
@@ -188,10 +187,6 @@ impl Default for AppSettings {
             accent: "#8b5cf6".into(),
             reduced_motion: false,
             download_concurrency: 8,
-            microsoft_client_id: match option_env!("XAL_MICROSOFT_CLIENT_ID") {
-                Some(value) if !value.is_empty() => value.into(),
-                _ => "2a1271ce-d488-4351-9f70-e184334f4c73".into(),
-            },
             discord_enabled: false,
             auto_update: true,
         }

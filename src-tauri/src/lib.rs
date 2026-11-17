@@ -17,6 +17,7 @@ mod modpacks;
 mod modules;
 mod options;
 mod providers;
+mod secrets;
 mod servers;
 mod storage;
 mod store;
@@ -93,6 +94,14 @@ pub fn run() {
             providers::modrinth::search_modrinth,
             providers::modrinth::list_modrinth_versions,
             providers::modrinth::install_modrinth_project,
+            providers::curseforge::search_curseforge,
+            providers::curseforge::list_curseforge_versions,
+            providers::curseforge::install_curseforge_project,
+            providers::curseforge::curseforge_key_status,
+            providers::curseforge::set_curseforge_api_key,
+            providers::curseforge::clear_curseforge_api_key,
+            providers::curseforge::test_curseforge_api_key,
+            providers::curseforge::pack::install_curseforge_modpack,
             providers::horizon::search_horizon,
             providers::horizon::list_horizon_versions,
             providers::horizon::install_horizon_project,

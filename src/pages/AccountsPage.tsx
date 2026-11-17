@@ -11,15 +11,13 @@ import { useLauncher } from "@/state/LauncherContext";
 import type { LoginMode } from "@/types";
 
 export function AccountsPage() {
-  const { accounts, activeAccount, activeAccountId, setActiveAccountId, settings, setSettings, refreshAccounts, perform, deviceCode, clearDeviceCode } = useLauncher();
-  const [clientId, setClientId] = useState(settings.microsoftClientId);
+  const { accounts, activeAccount, activeAccountId, setActiveAccountId, refreshAccounts, perform, deviceCode, clearDeviceCode } = useLauncher();
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState<LoginMode>("device");
   const [busy, setBusy] = useState(false);
   const [capeBusy, setCapeBusy] = useState(false);
 
   function openLogin() {
-    setClientId(settings.microsoftClientId);
     setMode("device");
     clearDeviceCode();
     setAdding(true);
@@ -30,12 +28,7 @@ export function AccountsPage() {
   }
   async function login() {
     setBusy(true);
-    let saved = settings;
-    if (clientId !== settings.microsoftClientId) {
-      const result = await perform(() => api.saveSettings({ ...settings, microsoftClientId: clientId }));
-      if (result) { saved = result; setSettings(result); } else { setBusy(false); return; }
-    }
-    const account = await perform(() => api.login(saved.microsoftClientId, mode), "Compte Microsoft connecté");
+    const account = await perform(() => api.login(mode), "Compte Microsoft connecté");
     clearDeviceCode(); setBusy(false);
     if (account) { await refreshAccounts(); setActiveAccountId(account.id); setAdding(false); }
   }
@@ -68,7 +61,7 @@ export function AccountsPage() {
       description={mode === "browser" ? "Le navigateur va s’ouvrir sur la page officielle Microsoft pour choisir le compte qui possède Minecraft." : "XalLauncher utilise le flux de code d’appareil : aucun mot de passe n’est demandé dans l’application."}
       onClose={() => { if (!busy) { setAdding(false); setMode("device"); clearDeviceCode(); } }}
     >
-      <label className="field field-full"><span>Identifiant d’application Microsoft Entra</span><input value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" disabled={busy} /><small>Créez une application publique dans Microsoft Entra et activez le flux de code d’appareil. Le mode navigateur nécessite aussi l’URI <code>http://localhost</code>. Cet identifiant n’est pas un secret.</small></label>
+      <small className="auth-integrated">Application Microsoft intégrée — aucune configuration requise.</small>
       {mode === "device" ? <>
         {deviceCode ? <div className="device-code">
           <span>Sur votre appareil, ouvrez le lien puis saisissez :</span>
@@ -92,8 +85,8 @@ export function AccountsPage() {
       <footer className="modal-footer">
         {busy ? <Button variant="secondary" onClick={() => void cancelLogin()}>Annuler</Button> : <Button variant="secondary" onClick={() => { setAdding(false); setMode("device"); clearDeviceCode(); }}>Fermer</Button>}
         {mode === "browser"
-          ? <Button onClick={() => void login()} loading={busy} disabled={!clientId.trim()}>{busy ? "En attente du navigateur…" : "Ouvrir la page Microsoft"}</Button>
-          : <Button onClick={() => void login()} loading={busy} disabled={!clientId.trim()}>{deviceCode ? "Connexion en cours…" : "Continuer avec Microsoft"}</Button>}
+          ? <Button onClick={() => void login()} loading={busy}>{busy ? "En attente du navigateur…" : "Ouvrir la page Microsoft"}</Button>
+          : <Button onClick={() => void login()} loading={busy}>{deviceCode ? "Connexion en cours…" : "Continuer avec Microsoft"}</Button>}
       </footer>
     </Modal> : null}
   </div>;

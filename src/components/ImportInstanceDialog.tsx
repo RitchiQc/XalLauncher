@@ -52,10 +52,10 @@ export function ImportInstanceDialog({ onClose, onImported }: { onClose: () => v
     <label className="field field-full"><span>Nom de l’instance (facultatif)</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Le nom du pack est utilisé par défaut" disabled={busy} /></label>
     <div className="format-list">
       <div className="format-row"><span className="format-badge">.mrpack</span><div><strong>Modrinth</strong><small>Mods, configs, resource packs et shaders. Un pack exporté par XalLauncher restaure aussi ses réglages (RAM, résolution, JVM, modules).</small></div></div>
+      <div className="format-row"><span className="format-badge">.zip</span><div><strong>CurseForge</strong><small>Modpack avec <code>manifest.json</code> : les fichiers sont téléchargés via l’API CurseForge. Une clé API personnelle est requise si le pack contient des fichiers.</small></div></div>
       <div className="format-row"><span className="format-badge">.zip</span><div><strong>Prism Launcher / MultiMC</strong><small>Archive d’instance ou dossier contenant <code>mmc-pack.json</code> : mods, configs, mondes et réglages.</small></div></div>
     </div>
     <details className="format-help"><summary>Formats non pris en charge</summary>
-      <p><strong>CurseForge (.zip)</strong> : non pris en charge, car le téléchargement de ses mods exige une clé API CurseForge. Importez d’abord le pack dans Prism Launcher, puis importez le dossier de l’instance Prism ici.</p>
       <p>ATLauncher, FTB, Technic et un dossier <code>.minecraft</code> brut ne sont pas reconnus.</p>
     </details>
     {busy ? <div className="panel-loading"><LoaderCircle className="spin" />{busyLabel} Les téléchargements peuvent prendre plusieurs minutes.</div> : null}

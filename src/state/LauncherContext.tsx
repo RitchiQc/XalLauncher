@@ -6,7 +6,7 @@ import type { Account, AppSettings, CrashReport, DeviceCodeEvent, GameLog, Insta
 
 const defaultSettings: AppSettings = {
   language: "fr", theme: "dark", accent: "#8b5cf6", reducedMotion: false,
-  downloadConcurrency: 8, microsoftClientId: "", discordEnabled: false, autoUpdate: true,
+  downloadConcurrency: 8, discordEnabled: false, autoUpdate: true,
 };
 
 type Toast = { id: number; message: string; kind: "success" | "error" | "info" };

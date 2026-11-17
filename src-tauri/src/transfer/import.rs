@@ -233,7 +233,24 @@ pub async fn import_instance(
                 .await
                 .map_err(|error| AppError::new(error.to_string()))?
         }
-        Format::CurseForge => Err(curseforge_error()),
+        Format::CurseForge => {
+            let imported = crate::providers::curseforge::pack::import_archive(
+                &state.client,
+                &state.store,
+                Some(&app),
+                path,
+                name,
+                &prefix,
+            )
+            .await?;
+            let imported_files = count_files(&state.store.game_dir(&imported.id));
+            Ok(ImportReport {
+                instance: imported,
+                format: "CurseForge".into(),
+                imported_files,
+                warnings: Vec::new(),
+            })
+        }
         Format::Unknown => Err(unknown_error()),
     }
 }

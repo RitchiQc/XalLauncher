@@ -121,7 +121,7 @@ pub(crate) async fn import_pack(
     Ok(instance)
 }
 
-fn pack_relative<'a>(path: &'a str, archive_prefix: &str) -> Option<&'a str> {
+pub(crate) fn pack_relative<'a>(path: &'a str, archive_prefix: &str) -> Option<&'a str> {
     let path = path.strip_prefix(archive_prefix)?;
     let folder = ["overrides/", "client-overrides/"]
         .into_iter()

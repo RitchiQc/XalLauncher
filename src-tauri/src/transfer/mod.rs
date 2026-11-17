@@ -86,13 +86,13 @@ pub(crate) fn count_files(path: &Path) -> u64 {
 
 pub(crate) fn curseforge_error() -> crate::error::AppError {
     crate::error::AppError::new(
-        "Les packs CurseForge ne sont pas pris en charge : leurs mods nécessitent une clé API CurseForge. \
-         Importez d’abord le pack dans Prism Launcher, puis importez le dossier de l’instance Prism dans XalLauncher.",
+        "Les dossiers d’instance CurseForge ne sont pas pris en charge directement. \
+         Importez l’archive .zip du pack CurseForge, ou importez d’abord le pack dans Prism Launcher puis son dossier d’instance.",
     )
 }
 
 pub(crate) fn unknown_error() -> crate::error::AppError {
     crate::error::AppError::new(
-        "Format non reconnu. Formats supportés : Modrinth (.mrpack) et Prism/MultiMC (.zip).",
+        "Format non reconnu. Formats supportés : Modrinth (.mrpack), CurseForge (.zip) et Prism/MultiMC (.zip ou dossier).",
     )
 }

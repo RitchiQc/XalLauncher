@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, LoginMode, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
+import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, CurseforgeKeyStatus, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, LoginMode, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
 
 export const api = {
   settings: () => invoke<AppSettings>("get_settings"),
@@ -9,7 +9,7 @@ export const api = {
   openStorageFolder: () => invoke<void>("open_storage_folder"),
   restartApp: () => invoke<void>("restart_app"),
   accounts: () => invoke<Account[]>("list_accounts"),
-  login: (clientId: string, mode: LoginMode = "device") => invoke<Account>("begin_microsoft_login", { clientId, mode }),
+  login: (mode: LoginMode = "device") => invoke<Account>("begin_microsoft_login", { mode }),
   cancelLogin: () => invoke<void>("cancel_microsoft_login"),
   openPrivate: (url: string) => invoke<boolean>("open_url_private", { url }),
   removeAccount: (accountId: string) => invoke<Account[]>("remove_account", { accountId }),
@@ -30,13 +30,21 @@ export const api = {
   running: () => invoke<string[]>("running_games"),
   log: (id: string) => invoke<string>("read_instance_log", { id }),
   search: (query: string, projectType: string, versionId?: string, loader?: Loader, offset = 0, index: SearchIndex = "relevance") => invoke<ProjectHit[]>("search_modrinth", { query, projectType, versionId, loader, offset, index }),
+  searchCurseforge: (query: string, projectType: string, versionId?: string, loader?: Loader, offset = 0, index: SearchIndex = "relevance") => invoke<ProjectHit[]>("search_curseforge", { query, projectType, versionId, loader, offset, index }),
+  curseforgeKeyStatus: () => invoke<CurseforgeKeyStatus>("curseforge_key_status"),
+  setCurseforgeKey: (key: string) => invoke<CurseforgeKeyStatus>("set_curseforge_api_key", { key }),
+  clearCurseforgeKey: () => invoke<CurseforgeKeyStatus>("clear_curseforge_api_key"),
+  testCurseforgeKey: () => invoke<void>("test_curseforge_api_key"),
   searchHorizon: (query: string, projectType: string, versionId?: string, loader?: Loader, offset = 0, index: SearchIndex = "relevance") => invoke<ProjectHit[]>("search_horizon", { query, projectType, versionId, loader, offset, index }),
   diagnoseCrash: (instanceId: string) => invoke<CrashReport>("diagnose_crash", { instanceId }),
   projectVersions: (projectId: string, instanceId: string) => invoke<ModrinthVersion[]>("list_modrinth_versions", { projectId, instanceId }),
+  curseforgeVersions: (projectId: string, instanceId: string) => invoke<ModrinthVersion[]>("list_curseforge_versions", { projectId, instanceId }),
   installProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_modrinth_project", { projectId, instanceId, versionId }),
+  installCurseforgeProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_curseforge_project", { projectId, instanceId, versionId }),
   horizonVersions: (projectId: string, instanceId: string) => invoke<ModrinthVersion[]>("list_horizon_versions", { projectId, instanceId }),
   installHorizonProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_horizon_project", { projectId, instanceId, versionId }),
   installModpack: (projectId: string) => invoke<Instance>("install_modrinth_modpack", { projectId }),
+  installCurseforgeModpack: (projectId: string) => invoke<Instance>("install_curseforge_modpack", { projectId }),
   importModpack: (path: string, name?: string) => invoke<Instance>("import_modrinth_pack", { path, name }),
   importInstance: (path: string, name?: string) => invoke<ImportReport>("import_instance", { path, name }),
   importInstanceFolder: (path: string, name?: string) => invoke<ImportReport>("import_instance_folder", { path, name }),

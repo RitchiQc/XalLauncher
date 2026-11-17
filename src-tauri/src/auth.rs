@@ -15,6 +15,7 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 const SERVICE: &str = "studio.xaltar.xallauncher";
+const FALLBACK_MICROSOFT_CLIENT_ID: &str = "2a1271ce-d488-4351-9f70-e184334f4c73";
 const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const SCOPE: &str = "XboxLive.signin offline_access";
 const DEVICE_CODE_ENDPOINT: &str =
@@ -24,6 +25,13 @@ const AUTHORIZE_ENDPOINT: &str =
     "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const CHUNK_SIZE: usize = 1000;
 const BROWSER_TIMEOUT_SECONDS: u64 = 180;
+
+pub(crate) fn default_microsoft_client_id() -> String {
+    option_env!("XAL_MICROSOFT_CLIENT_ID")
+        .filter(|value| !value.is_empty())
+        .unwrap_or(FALLBACK_MICROSOFT_CLIENT_ID)
+        .to_string()
+}
 
 async fn ensure_auth_success(
     response: reqwest::Response,
@@ -452,17 +460,11 @@ fn save_account(
 
 #[tauri::command]
 pub async fn begin_microsoft_login(
-    client_id: String,
     mode: Option<String>,
     app: AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Account> {
-    if client_id.trim().is_empty() {
-        return Err(AppError::new(
-            "Renseignez d’abord l’identifiant de l’application Microsoft Entra dans les paramètres",
-        ));
-    }
-    let client_id = client_id.trim().to_string();
+    let client_id = default_microsoft_client_id();
     state.auth_cancel.store(false, Ordering::SeqCst);
     let token = if mode.as_deref() == Some("browser") {
         browser_login(&client_id, &app, &state).await?
@@ -644,10 +646,7 @@ pub async fn valid_token(state: &crate::AppState, account_id: &str) -> Result<(A
     if credentials.expires_at > Utc::now() + Duration::seconds(60) {
         return Ok((account, credentials.minecraft_token));
     }
-    let client_id = state.store.settings()?.microsoft_client_id;
-    if client_id.is_empty() {
-        return Err(AppError::new("Identifiant Microsoft Entra absent"));
-    }
+    let client_id = default_microsoft_client_id();
     let response = state
         .client
         .post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
@@ -744,9 +743,10 @@ pub async fn set_active_cape(
 #[cfg(test)]
 mod tests {
     use super::{
-        authorize_url, delete_credentials, escape_html, join_secret, parse_oauth_callback,
-        pkce_challenge, pkce_pair, read_credentials, read_secret, save_credentials,
-        secure_texture_url, split_secret, Credentials, Duration, Utc, DEVICE_CODE_GRANT,
+        authorize_url, default_microsoft_client_id, delete_credentials, escape_html, join_secret,
+        parse_oauth_callback, pkce_challenge, pkce_pair, read_credentials, read_secret,
+        save_credentials, secure_texture_url, split_secret, Credentials, Duration, Utc,
+        DEVICE_CODE_GRANT,
     };
 
     #[test]
@@ -763,6 +763,13 @@ mod tests {
             DEVICE_CODE_GRANT,
             "urn:ietf:params:oauth:grant-type:device_code"
         );
+    }
+
+    #[test]
+    fn provides_a_compiled_microsoft_client_id() {
+        let client_id = default_microsoft_client_id();
+        assert!(!client_id.is_empty());
+        assert!(!client_id.contains(char::is_whitespace));
     }
 
     #[test]
