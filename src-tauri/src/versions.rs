@@ -1,5 +1,5 @@
 use crate::error::{AppError, Result};
-use crate::http::get_json;
+use crate::http::{ensure_success, get_json};
 use crate::models::{Loader, LoaderVersion, MinecraftVersion};
 use serde::Deserialize;
 use serde_json::Value;
@@ -34,14 +34,24 @@ async fn manifest(client: &reqwest::Client) -> Result<VersionManifest> {
     Err(last_error.unwrap_or_else(|| AppError::new("Aucun manifeste Minecraft configuré")))
 }
 
-pub async fn version_json(client: &reqwest::Client, id: &str) -> Result<Value> {
+pub async fn version_json_raw(client: &reqwest::Client, id: &str) -> Result<(Vec<u8>, Value)> {
     let manifest = manifest(client).await?;
     let entry = manifest
         .versions
         .into_iter()
         .find(|version| version.id == id)
         .ok_or_else(|| AppError::new(format!("Version Minecraft inconnue : {id}")))?;
-    get_json(client, &entry.url).await
+    let response = client.get(&entry.url).send().await?;
+    let bytes = ensure_success(response, "Téléchargement du manifeste Minecraft")
+        .await?
+        .bytes()
+        .await?;
+    let value = serde_json::from_slice(&bytes)?;
+    Ok((bytes.to_vec(), value))
+}
+
+pub async fn version_json(client: &reqwest::Client, id: &str) -> Result<Value> {
+    Ok(version_json_raw(client, id).await?.1)
 }
 
 fn supported_versions(manifest: VersionManifest) -> Vec<MinecraftVersion> {

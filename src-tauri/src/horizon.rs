@@ -3,10 +3,11 @@ use crate::error::{AppError, Result, ResultExt};
 use crate::http::{ensure_success, get_json};
 use crate::models::{Account, Instance, LaunchResult, LoaderVersion};
 use crate::store::Store;
-use crate::versions::version_json;
+use crate::versions::version_json_raw;
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha1::{Digest, Sha1};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -41,6 +42,14 @@ pub(crate) struct Build {
     pub prepare: PathBuf,
     pub client_api: Value,
     pub prepare_api: Value,
+}
+
+struct GameFiles {
+    version_json: PathBuf,
+    client_jar: PathBuf,
+    server_jar: PathBuf,
+    libraries_dir: PathBuf,
+    assets_dir: PathBuf,
 }
 
 pub async fn list_builds(client: &reqwest::Client) -> Result<Vec<LoaderVersion>> {
@@ -423,12 +432,61 @@ pub(crate) async fn resolve_build(
     })
 }
 
+fn sha1_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha1::digest(bytes))
+}
+
+fn manifest_accepted(lock: &Value, checksum: &str) -> bool {
+    let minecraft = &lock["minecraft"];
+    if minecraft["manifest_sha1"].as_str() == Some(checksum) {
+        return true;
+    }
+    minecraft["accepted_manifest_sha1"]
+        .as_array()
+        .is_some_and(|accepted| {
+            accepted
+                .iter()
+                .any(|entry| entry.as_str() == Some(checksum))
+        })
+}
+
+async fn horizon_version_manifest(
+    client: &reqwest::Client,
+    build: &Build,
+) -> Result<(Vec<u8>, Value)> {
+    let lock: Value = serde_json::from_slice(&fs::read(build.root.join("research-lock.json"))?)?;
+    let (bytes, value) = version_json_raw(client, HORIZON_MINECRAFT).await?;
+    if manifest_accepted(&lock, &sha1_hex(&bytes)) {
+        return Ok((bytes, value));
+    }
+    let pinned = lock["minecraft"]["manifest_sha1"]
+        .as_str()
+        .ok_or_else(|| AppError::new("research-lock.json sans manifest_sha1"))?;
+    let url =
+        format!("https://piston-meta.mojang.com/v1/packages/{pinned}/{HORIZON_MINECRAFT}.json");
+    let response = ensure_success(
+        client.get(&url).send().await?,
+        "Téléchargement du manifeste 26.3 épinglé",
+    )
+    .await?;
+    let bytes = response.bytes().await?;
+    let actual = sha1_hex(&bytes);
+    if actual != pinned {
+        return Err(AppError::new(format!(
+            "Le manifeste 26.3 épinglé a un SHA-1 inattendu : {actual} au lieu de {pinned}"
+        )));
+    }
+    let value = serde_json::from_slice(&bytes)?;
+    Ok((bytes.to_vec(), value))
+}
+
 async fn ensure_game_files(
     client: &reqwest::Client,
     store: &Store,
     app: &AppHandle,
-) -> Result<PathBuf> {
-    let profile = version_json(client, HORIZON_MINECRAFT).await?;
+    build: &Build,
+) -> Result<GameFiles> {
+    let (raw_profile, profile) = horizon_version_manifest(client, build).await?;
     let profiles = crate::launch::profile_chain(client, profile.clone()).await?;
     let base = profiles
         .last()
@@ -447,10 +505,20 @@ async fn ensure_game_files(
 
     let version_dir = store.root().join("versions").join(HORIZON_MINECRAFT);
     fs::create_dir_all(&version_dir)?;
-    fs::write(
-        version_dir.join(format!("{HORIZON_MINECRAFT}.json")),
-        serde_json::to_vec_pretty(&profile)?,
-    )?;
+    let version_json = version_dir.join(format!("{HORIZON_MINECRAFT}.json"));
+    fs::write(&version_json, &raw_profile)?;
+
+    let horizon_manifest = build
+        .root
+        .join(".local")
+        .join("minecraft")
+        .join(HORIZON_MINECRAFT)
+        .join("manifest.json");
+    if let Some(parent) = horizon_manifest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&horizon_manifest, &raw_profile)?;
+
     let client_info = &base["downloads"]["client"];
     let client_sha = client_info["sha1"]
         .as_str()
@@ -485,7 +553,13 @@ async fn ensure_game_files(
         "Serveur Minecraft 26.3",
     )
     .await?;
-    Ok(server_jar)
+    Ok(GameFiles {
+        version_json,
+        client_jar,
+        server_jar,
+        libraries_dir: store.root().join("libraries"),
+        assets_dir: store.root().join("assets"),
+    })
 }
 
 fn check_resources(build: &Build, resources: &Path) -> bool {
@@ -509,7 +583,7 @@ fn run_prepare(
     app: &AppHandle,
     build: &Build,
     java_home: &Path,
-    server_jar: &Path,
+    game_files: &GameFiles,
     minecraft_dir: &Path,
     output: &Path,
 ) -> Result<()> {
@@ -518,9 +592,17 @@ fn run_prepare(
     command
         .arg("--prepare")
         .arg("--server-jar")
-        .arg(server_jar)
+        .arg(&game_files.server_jar)
         .arg("--minecraft-dir")
         .arg(minecraft_dir)
+        .arg("--version-json")
+        .arg(&game_files.version_json)
+        .arg("--client-jar")
+        .arg(&game_files.client_jar)
+        .arg("--libraries-dir")
+        .arg(&game_files.libraries_dir)
+        .arg("--assets-dir")
+        .arg(&game_files.assets_dir)
         .arg("--output")
         .arg(output)
         .arg("--complete")
@@ -618,7 +700,7 @@ pub(crate) async fn prepare(
     if resources.is_dir() && check_resources(&build, &resources) {
         return Ok((build, resources));
     }
-    let server_jar = ensure_game_files(&state.client, &state.store, app).await?;
+    let game_files = ensure_game_files(&state.client, &state.store, app, &build).await?;
     let java_major = build.prepare_api["java_major"].as_u64().unwrap_or(25);
     let java_home =
         crate::java::ensure_jdk(&state.client, &state.store, java_major, Some(app)).await?;
@@ -632,7 +714,7 @@ pub(crate) async fn prepare(
             &app,
             &build_for_prepare,
             &java_home_for_prepare,
-            &server_jar,
+            &game_files,
             &minecraft_dir,
             &output,
         )
@@ -778,7 +860,7 @@ pub(crate) async fn launch(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_sha256sums, safe_tag};
+    use super::{manifest_accepted, parse_sha256sums, safe_tag, sha1_hex};
 
     #[test]
     fn reads_the_windows_checksum() {
@@ -798,5 +880,38 @@ f47f9f988b7c30b727dfb35aed2b74f01428925b2eccc9bafff2352f4847f7d6  horizon-window
         assert_eq!(safe_tag("nightly"), "nightly");
         assert_eq!(safe_tag("nightly-2026-11-13"), "nightly-2026-11-13");
         assert_eq!(safe_tag("a/b:c"), "a_b_c");
+    }
+
+    #[test]
+    fn accepts_only_horizon_manifest_hashes() {
+        let lock = serde_json::json!({
+            "minecraft": {
+                "manifest_sha1": "11f1aefe473eefba0af62e3286c33b692807b2eb",
+                "accepted_manifest_sha1": [
+                    "9f67e10ed013deeaad20ac3c800652765d493408"
+                ]
+            }
+        });
+        assert!(manifest_accepted(
+            &lock,
+            "11f1aefe473eefba0af62e3286c33b692807b2eb"
+        ));
+        assert!(manifest_accepted(
+            &lock,
+            "9f67e10ed013deeaad20ac3c800652765d493408"
+        ));
+        assert!(!manifest_accepted(
+            &lock,
+            "3267fc08b80e13529ead2f913fc7807d19aec710"
+        ));
+    }
+
+    #[test]
+    fn pretty_printing_changes_the_manifest_sha1() {
+        let raw = br#"{"id":"26.3"}"#;
+        let value: serde_json::Value = serde_json::from_slice(raw).unwrap();
+        let pretty = serde_json::to_vec_pretty(&value).unwrap();
+        assert_eq!(sha1_hex(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_ne!(sha1_hex(raw), sha1_hex(&pretty));
     }
 }

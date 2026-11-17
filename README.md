@@ -45,6 +45,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Instance **Horizon** dédiée à **Minecraft Java Edition 26.3**, avec builds **Nightly** récupérés depuis les Releases officielles `horizon-rust/horizon`.
 - Archive Windows vérifiée par **SHA-256** contre `SHA256SUMS`, puis extraction complète (`horizon-client`, `horizon-prepare`, `research-lock.json`, `exporters/`).
 - Préparation des ressources à partir de la copie Minecraft 26.3 possédée par le joueur : client, bibliothèques Maven, assets et `server.jar` téléchargé depuis le manifeste Mojang, avec vérification des empreintes.
+- Le manifeste `26.3.json` est conservé **octet pour octet** (jamais resérialisé), puis son SHA-1 est comparé à `research-lock.json` ; si Mojang republie un fichier non accepté, XalLauncher utilise automatiquement le manifeste épinglé fourni par Horizon.
 - **JDK 25 Temurin** dédié à `horizon-prepare` (`runtimes/jdk-25`), séparé du JRE utilisé par les instances Minecraft classiques. Aucun Java n’est utilisé pour exécuter Horizon.
 - Lancement natif avec `--resources`, `--game-dir`, `--home`, résolution, plein écran et serveur de démarrage ; le jeton Minecraft est transmis par **stdin** (`--session-stdin`), jamais en ligne de commande.
 - `horizon-prepare --check` est exécuté avant chaque partie ; une préparation incomplète est refaite automatiquement.
