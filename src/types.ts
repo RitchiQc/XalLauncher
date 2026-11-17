@@ -1,6 +1,6 @@
 export type Loader = "vanilla" | "fabric" | "quilt" | "forge" | "neoforge" | "horizon";
 export type LoginMode = "device" | "browser";
-export type ContentKind = "mod" | "resourcepack" | "shader" | "world";
+export type ContentKind = "mod" | "native-mod" | "resourcepack" | "shader" | "world";
 export type Theme = "dark" | "light" | "space";
 export type SearchIndex = "relevance" | "downloads" | "follows" | "newest" | "updated";
 export type ContentProvider = "modrinth" | "horizon" | "curseforge";
@@ -126,6 +126,7 @@ export interface AppSettings {
   downloadConcurrency: number;
   discordEnabled: boolean;
   autoUpdate: boolean;
+  showHorizonOfficialServer: boolean;
 }
 
 export interface StorageInfo {

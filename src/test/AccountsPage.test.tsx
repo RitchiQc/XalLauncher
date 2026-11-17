@@ -28,7 +28,7 @@ vi.mock("@/state/LauncherContext", () => ({
     setActiveAccountId: mocks.setActiveAccountId,
     settings: {
       language: "fr", theme: "dark", accent: "#8b5cf6", reducedMotion: false,
-      downloadConcurrency: 8, discordEnabled: false, autoUpdate: true,
+      downloadConcurrency: 8, discordEnabled: false, autoUpdate: true, showHorizonOfficialServer: false,
     },
     refreshAccounts: mocks.refreshAccounts,
     perform: mocks.perform,

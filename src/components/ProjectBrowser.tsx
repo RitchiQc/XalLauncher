@@ -5,11 +5,11 @@ import { ArrowUpDown, Check, Download, ExternalLink, Heart, KeyRound, PackageSea
 import { Button, EmptyState, Modal } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
-import { confirmCodeExecution } from "@/lib/security";
+import { confirmCodeExecution, confirmHorizonModpack, confirmHorizonNative } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
 import type { ContentEntry, ContentProvider, Instance, ModrinthVersion, ProjectHit, SearchIndex } from "@/types";
 
-export type BrowserKind = "mod" | "modpack" | "resourcepack" | "shader";
+export type BrowserKind = "mod" | "native-mod" | "modpack" | "resourcepack" | "shader";
 
 const PAGE_SIZE = 24;
 const sortOptions: { value: SearchIndex; label: string }[] = [
@@ -63,7 +63,12 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     const stored = localStorage.getItem("xal-sort");
     return sortOptions.some((option) => option.value === stored) ? stored as SearchIndex : "relevance";
   });
-  const [selectedProvider, setSelectedProvider] = useState<"modrinth" | "curseforge">(() => localStorage.getItem("xal-provider") === "curseforge" ? "curseforge" : "modrinth");
+  const [selectedProvider, setSelectedProvider] = useState<"modrinth" | "curseforge" | "horizon">(() => {
+    const stored = localStorage.getItem("xal-provider");
+    if (stored === "curseforge") return "curseforge";
+    if (stored === "horizon" && kind === "modpack") return "horizon";
+    return "modrinth";
+  });
   const [curseforgeReady, setCurseforgeReady] = useState<boolean>();
   const [curseforgeChecking, setCurseforgeChecking] = useState(false);
   const [results, setResults] = useState<ProjectHit[]>([]);
@@ -106,7 +111,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     return () => { cancelled = true; };
   }, [provider]);
 
-  function chooseProvider(next: "modrinth" | "curseforge") {
+  function chooseProvider(next: "modrinth" | "curseforge" | "horizon") {
     if (next === selectedProvider) return;
     localStorage.setItem("xal-provider", next);
     setSelectedProvider(next);
@@ -125,7 +130,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     if (replace) setLoading(true); else setLoadingMore(true);
     try {
       const page = provider === "horizon"
-        ? await api.searchHorizon(query, kind, instance?.versionId, instance?.loader, offset, sort)
+        ? await api.searchHorizon(query, kind, instance?.versionId ?? "26.3", instance?.loader ?? "horizon", offset, sort)
         : provider === "curseforge"
           ? await api.searchCurseforge(query, kind, instance?.versionId, instance?.loader, offset, sort)
           : await api.search(query, kind, instance?.versionId, instance?.loader, offset, sort);
@@ -163,7 +168,11 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
   async function openVersions(project: ProjectHit) {
     if (kind === "modpack") {
       if (provider === "horizon") {
-        notify("Les modpacks Horizon (.hpack) seront pris en charge dans une prochaine version", "info");
+        if (!(await confirmHorizonModpack(`« ${project.title} »`))) return;
+        setInstalling(project.projectId);
+        const created = await perform(() => api.installHorizonModpack(project.projectId), `« ${project.title} » installé`);
+        setInstalling(undefined);
+        if (created) onModpackInstalled?.(created);
         return;
       }
       if (!(await confirmCodeExecution("Ce modpack"))) return;
@@ -196,6 +205,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
 
   async function installSelected() {
     if (!instance || !selectedProject || !selectedVersionId) return;
+    if (provider === "horizon" && kind === "native-mod" && !(await confirmHorizonNative(`« ${selectedProject.title} »`))) return;
     setInstalling(selectedProject.projectId);
     const result = await perform(
       () => provider === "horizon"
@@ -218,11 +228,11 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
 
   return <div className="project-browser">
     <div className="browser-toolbar">
-      <label className="search-field explorer-search"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Rechercher ${kind === "mod" ? "des mods" : kind === "modpack" ? "des modpacks" : kind === "shader" ? "des shaders" : "des resource packs"}…`} /><kbd>{providerLabel}</kbd></label>
+      <label className="search-field explorer-search"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Rechercher ${kind === "mod" ? "des mods" : kind === "native-mod" ? "des mods natifs" : kind === "modpack" ? "des modpacks" : kind === "shader" ? "des shaders" : "des resource packs"}…`} /><kbd>{providerLabel}</kbd></label>
       <label className="sort-field" title="Trier les résultats"><ArrowUpDown size={16} /><select aria-label="Trier les résultats" value={sort} onChange={(event) => setSort(event.target.value as SearchIndex)}>{sortOptions.map((option) => <option value={option.value} key={option.value}>{provider === "curseforge" && option.value === "follows" ? "Popularité" : option.label}</option>)}</select></label>
     </div>
-    {instance?.loader !== "horizon" ? <div className="browser-providers"><div className="segmented"><button className={provider === "modrinth" ? "active" : ""} onClick={() => chooseProvider("modrinth")}>Modrinth</button><button className={provider === "curseforge" ? "active" : ""} onClick={() => chooseProvider("curseforge")}>CurseForge</button></div>{provider === "curseforge" ? <span className="provider-note">Données et téléchargements fournis par l’API CurseForge</span> : null}</div> : null}
-    <div className="browser-compatibility">{kind === "modpack" ? "Chaque modpack créera une nouvelle instance isolée." : provider === "horizon" ? `Contenus Horizon compatibles avec Minecraft ${instance?.versionId}` : `Contenus compatibles avec Minecraft ${instance?.versionId} · ${instance?.loader}`}</div>
+    {instance?.loader !== "horizon" ? <div className="browser-providers"><div className="segmented"><button className={provider === "modrinth" ? "active" : ""} onClick={() => chooseProvider("modrinth")}>Modrinth</button><button className={provider === "curseforge" ? "active" : ""} onClick={() => chooseProvider("curseforge")}>CurseForge</button>{kind === "modpack" ? <button className={provider === "horizon" ? "active" : ""} onClick={() => chooseProvider("horizon")}>Horizon</button> : null}</div>{provider === "curseforge" ? <span className="provider-note">Données et téléchargements fournis par l’API CurseForge</span> : provider === "horizon" ? <span className="provider-note">Registre Horizon · modpacks (.hpack)</span> : null}</div> : null}
+    <div className="browser-compatibility">{kind === "modpack" ? "Chaque modpack créera une nouvelle instance isolée." : provider === "horizon" ? `Contenus Horizon compatibles avec Minecraft ${instance?.versionId ?? "26.3"}` : `Contenus compatibles avec Minecraft ${instance?.versionId} · ${instance?.loader}`}</div>
     {provider === "curseforge" && curseforgeChecking ? <div className="panel-loading"><RefreshCw className="spin" />Vérification de la clé CurseForge…</div> : provider === "curseforge" && curseforgeReady === false ? <EmptyState icon={<KeyRound size={32} />} title="Clé API CurseForge requise" description="Ajoutez votre clé personnelle dans les paramètres. Elle reste dans le Coffre d’identification Windows et n’est jamais partagée." action={<Button onClick={() => navigate("/settings")}>Configurer CurseForge</Button>} /> : loading ? <div className="project-grid">{Array.from({ length: 6 }, (_, index) => <div className="project-card skeleton" key={index} />)}</div> : results.length ? <>
       <div className="project-grid">{results.map((project) => {
         const installed = installedContent.some((item) => matchesProject(item, project, provider));
@@ -235,11 +245,12 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
       <div ref={sentinel} className="browser-sentinel" aria-hidden="true" />
       {loadingMore ? <div className="panel-loading"><RefreshCw className="spin" />Chargement de la suite…</div> : null}
       {!loadingMore && hasMore ? <div className="browser-more"><Button variant="secondary" onClick={() => void loadPage(results.length, false)}>Charger plus</Button></div> : null}
-    </> : <EmptyState icon={<PackageSearch size={32} />} title="Aucun contenu compatible" description={provider === "horizon" ? (kind === "shader" ? "Aucun shader Horizon compatible avec l’API 0.2 de ce build. Les packs 0.1 sont refusés par Horizon." : "Aucun projet Horizon compatible avec Minecraft 26.3. Modifiez votre recherche.") : "Modifiez votre recherche ou utilisez une instance avec une autre version de Minecraft."} />}
+    </> : <EmptyState icon={<PackageSearch size={32} />} title="Aucun contenu compatible" description={provider === "horizon" ? (kind === "shader" ? "Aucun shader Horizon compatible avec les lignes d’API servies par ce build. Modifiez votre recherche." : kind === "native-mod" ? "Aucun mod natif Horizon compatible avec ce build. Les versions marquées cassées sont masquées." : "Aucun projet Horizon compatible avec Minecraft 26.3. Modifiez votre recherche.") : "Modifiez votre recherche ou utilisez une instance avec une autre version de Minecraft."} />}
     {selectedProject ? <Modal title={`Installer ${selectedProject.title}`} description="Choisissez la publication compatible avec cette instance." onClose={closeVersions}>
       {versionsLoading ? <div className="panel-loading">Chargement des versions…</div> : versions.length ? <>
         <label className="field field-full"><span>Version du contenu</span><select autoFocus value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)} disabled={Boolean(installing)}>{versions.map((version) => <option key={version.id} value={version.id}>{version.versionNumber} · {version.versionType}{installedContent.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === version.id) ? " · installée" : ""}</option>)}</select></label>
         {selectedVersion ? <dl className="version-details"><div><dt>Nom</dt><dd>{selectedVersion.name}</dd></div><div><dt>Canal</dt><dd><span className={`version-channel ${selectedVersion.versionType}`}>{selectedVersion.versionType}</span></dd></div><div><dt>Publication</dt><dd>{formatDate(selectedVersion.datePublished)}</dd></div><div><dt>Minecraft</dt><dd>{selectedVersion.gameVersions.join(", ")}</dd></div><div><dt>Loaders</dt><dd>{selectedVersion.loaders.join(", ") || "Tous"}</dd></div></dl> : null}
+        {provider === "horizon" && kind === "native-mod" ? <p className="provider-note">Ce bundle sera installé dans horizon-native-mods. Il devra être compilé par un build natif Horizon avant de se charger.</p> : null}
       </> : <EmptyState icon={<PackageSearch />} title="Aucune version compatible" description="Ce projet ne propose aucune publication pour cette instance." />}
       <footer className="modal-footer"><Button variant="secondary" disabled={Boolean(installing)} onClick={closeVersions}>Annuler</Button><Button loading={installing === selectedProject.projectId} disabled={!selectedVersionId || versionsLoading || selectedVersionInstalled} onClick={() => void installSelected()}>{selectedVersionInstalled ? <Check size={16} /> : <Download size={16} />}{selectedVersionInstalled ? "Version installée" : installedContent.some((item) => matchesProject(item, selectedProject, provider)) ? "Remplacer par cette version" : "Installer cette version"}</Button></footer>
     </Modal> : null}

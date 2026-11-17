@@ -7,6 +7,7 @@ mod crash;
 mod download;
 mod error;
 mod horizon;
+mod horizon_servers;
 mod http;
 mod instances;
 mod java;
@@ -105,6 +106,7 @@ pub fn run() {
             providers::horizon::search_horizon,
             providers::horizon::list_horizon_versions,
             providers::horizon::install_horizon_project,
+            providers::horizon::install_horizon_modpack,
             content::list_content,
             content::toggle_content,
             content::delete_content,

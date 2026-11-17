@@ -177,6 +177,8 @@ pub struct AppSettings {
     pub download_concurrency: usize,
     pub discord_enabled: bool,
     pub auto_update: bool,
+    #[serde(default)]
+    pub show_horizon_official_server: bool,
 }
 
 impl Default for AppSettings {
@@ -189,6 +191,7 @@ impl Default for AppSettings {
             download_concurrency: 8,
             discord_enabled: false,
             auto_update: true,
+            show_horizon_official_server: false,
         }
     }
 }

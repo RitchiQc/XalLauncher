@@ -43,6 +43,7 @@ export const api = {
   installCurseforgeProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_curseforge_project", { projectId, instanceId, versionId }),
   horizonVersions: (projectId: string, instanceId: string) => invoke<ModrinthVersion[]>("list_horizon_versions", { projectId, instanceId }),
   installHorizonProject: (projectId: string, instanceId: string, versionId: string) => invoke<ContentEntry>("install_horizon_project", { projectId, instanceId, versionId }),
+  installHorizonModpack: (projectId: string) => invoke<Instance>("install_horizon_modpack", { projectId }),
   installModpack: (projectId: string) => invoke<Instance>("install_modrinth_modpack", { projectId }),
   installCurseforgeModpack: (projectId: string) => invoke<Instance>("install_curseforge_modpack", { projectId }),
   importModpack: (path: string, name?: string) => invoke<Instance>("import_modrinth_pack", { path, name }),

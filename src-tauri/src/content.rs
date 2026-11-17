@@ -13,6 +13,10 @@ fn folder_for_kind(loader: Loader, kind: &str) -> Result<&'static str> {
         } else {
             "mods"
         }),
+        "native-mod" if loader == Loader::Horizon => Ok("horizon-native-mods"),
+        "native-mod" => Err(AppError::new(
+            "Les mods natifs nécessitent une instance Horizon",
+        )),
         "resourcepack" => Ok("resourcepacks"),
         "shader" => Ok("shaderpacks"),
         "world" => Ok("saves"),
@@ -108,13 +112,18 @@ pub(crate) fn list_entries(
         if (kind == "world") != is_dir {
             continue;
         }
+        if kind == "native-mod" && !is_dir {
+            continue;
+        }
         let file_meta = item.metadata()?;
         let modified = file_meta
             .modified()
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         let metadata = metadata(&path);
         entries.push(ContentEntry {
-            enabled: if loader == Loader::Horizon && kind == "mod" {
+            enabled: if loader == Loader::Horizon && kind == "native-mod" {
+                mod_enabled(&game_dir, &name)
+            } else if loader == Loader::Horizon && kind == "mod" {
                 !name.ends_with(".disabled") && mod_enabled(&game_dir, mod_id_from_file(&name))
             } else {
                 !name.ends_with(".disabled")
@@ -152,6 +161,17 @@ pub fn toggle_content(
     let loader = state.store.instance(&instance_id)?.loader;
     let game_dir = state.store.game_dir(&instance_id);
     let path = game_dir.join(folder_for_kind(loader, &kind)?).join(name);
+    if loader == Loader::Horizon && kind == "native-mod" {
+        if !path.is_dir() {
+            return Err(AppError::new("Mod natif Horizon introuvable"));
+        }
+        let enabled = mod_enabled(&game_dir, name);
+        set_mod_enabled(&game_dir, name, !enabled)?;
+        return list_entries(&state.store, &instance_id, &kind)?
+            .into_iter()
+            .find(|entry| entry.file_name == name)
+            .ok_or_else(|| AppError::new("Mod natif Horizon introuvable"));
+    }
     if !path.is_file() {
         return Err(AppError::new("Fichier introuvable"));
     }
@@ -203,7 +223,7 @@ pub fn delete_content(
     } else if path.is_file() {
         fs::remove_file(&path)?;
     }
-    if loader == Loader::Horizon && kind == "mod" {
+    if loader == Loader::Horizon && (kind == "mod" || kind == "native-mod") {
         let _ = set_mod_enabled(&game_dir, mod_id_from_file(name), false);
     }
     let _ = fs::remove_file(sidecar(&path));
@@ -282,6 +302,11 @@ fn copy_content(
     kind: &str,
     source_path: &Path,
 ) -> Result<ContentEntry> {
+    if kind == "native-mod" {
+        return Err(AppError::new(
+            "Les mods natifs Horizon s’installent depuis le marché Horizon",
+        ));
+    }
     if kind == "world" || kind == "screenshot" {
         return Err(AppError::new(
             "Utilisez le dossier du jeu pour ce type de contenu",
@@ -351,6 +376,11 @@ pub(crate) fn import_many(
     kind: &str,
     source_paths: &[PathBuf],
 ) -> Result<ImportSummary> {
+    if kind == "native-mod" {
+        return Err(AppError::new(
+            "Les mods natifs Horizon s’installent depuis le marché Horizon",
+        ));
+    }
     if kind == "world" || kind == "screenshot" {
         return Err(AppError::new(
             "Utilisez le dossier du jeu pour ce type de contenu",
@@ -437,6 +467,11 @@ mod tests {
             "horizon-mods"
         );
         assert_eq!(folder_for_kind(Loader::Vanilla, "mod").unwrap(), "mods");
+        assert_eq!(
+            folder_for_kind(Loader::Horizon, "native-mod").unwrap(),
+            "horizon-native-mods"
+        );
+        assert!(folder_for_kind(Loader::Fabric, "native-mod").is_err());
     }
 
     #[test]

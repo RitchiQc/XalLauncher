@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   installProject: vi.fn(),
   installCurseforgeProject: vi.fn(),
   installHorizonProject: vi.fn(),
+  installHorizonModpack: vi.fn(),
   installModpack: vi.fn(),
   installCurseforgeModpack: vi.fn(),
   curseforgeKeyStatus: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("@/lib/api", () => ({
     installProject: mocks.installProject,
     installCurseforgeProject: mocks.installCurseforgeProject,
     installHorizonProject: mocks.installHorizonProject,
+    installHorizonModpack: mocks.installHorizonModpack,
     installModpack: mocks.installModpack,
     installCurseforgeModpack: mocks.installCurseforgeModpack,
     curseforgeKeyStatus: mocks.curseforgeKeyStatus,
@@ -45,7 +47,7 @@ vi.mock("@/state/LauncherContext", () => ({
   useLauncher: () => ({ perform: mocks.perform, notify: mocks.notify }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("@/lib/security", () => ({ confirmCodeExecution: vi.fn().mockResolvedValue(true) }));
+vi.mock("@/lib/security", () => ({ confirmCodeExecution: vi.fn().mockResolvedValue(true), confirmHorizonModpack: vi.fn().mockResolvedValue(true), confirmHorizonNative: vi.fn().mockResolvedValue(true) }));
 
 const instance: Instance = {
   id: "instance-1", name: "Test", versionId: "1.21.1", loader: "fabric", color: "#8b5cf6",
@@ -80,6 +82,18 @@ const curseforgeProject: ProjectHit = {
 const curseforgeVersions: ModrinthVersion[] = [
   { id: "5000", name: "JEI 19.0", versionNumber: "19.0", versionType: "release", datePublished: "2025-03-01T00:00:00Z", gameVersions: ["1.21.1"], loaders: ["Fabric"] },
 ];
+const nativeHorizonProject: ProjectHit = {
+  projectId: "zoom", slug: "zoom", title: "Zoom", description: "Zoom natif", author: "Horizon",
+  downloads: 4000, follows: 80, projectType: "native-mod", versions: ["26.3"], provider: "horizon",
+};
+const nativeHorizonVersions: ModrinthVersion[] = [
+  { id: "2.0.0", name: "Zoom 2.0.0", versionNumber: "2.0.0", versionType: "release", datePublished: "2026-10-29", gameVersions: ["26.3"], loaders: ["horizon"] },
+];
+const horizonModpackProject: ProjectHit = {
+  projectId: "atomic_industry", slug: "atomic_industry", title: "Atomic Industry", description: "Pack tech", author: "bioneisme",
+  downloads: 1200, follows: 40, projectType: "modpack", versions: ["26.3"], provider: "horizon",
+};
+const horizonPackInstance: Instance = { ...horizonInstance, id: "horizon-pack", name: "Atomic Industry" };
 
 function renderBrowser(ui: ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
@@ -106,6 +120,7 @@ beforeEach(() => {
   mocks.installProject.mockResolvedValue({ fileName: "sodium.jar" });
   mocks.installCurseforgeProject.mockResolvedValue({ fileName: "jei.jar" });
   mocks.installHorizonProject.mockResolvedValue({ fileName: "coords_hud.hmod" });
+  mocks.installHorizonModpack.mockResolvedValue(horizonPackInstance);
   mocks.installCurseforgeModpack.mockResolvedValue({ id: "cf-pack", name: "JEI Pack", versionId: "1.21.1", loader: "fabric", color: "#8b5cf6", memoryMin: 512, memoryMax: 4096, resolutionWidth: 1280, resolutionHeight: 720, fullscreen: false, closeOnLaunch: false, jvmArguments: "", createdAt: "2025-03-01T00:00:00Z", totalPlaySeconds: 0 });
   mocks.curseforgeKeyStatus.mockResolvedValue({ configured: true, source: "vault" });
   mocks.perform.mockImplementation(async (action: () => Promise<unknown>) => action());
@@ -181,6 +196,36 @@ describe("ProjectBrowser", () => {
     await waitFor(() => expect(mocks.installHorizonProject).toHaveBeenCalledWith("coords_hud", "instance-1", "0.1.0"));
     expect(mocks.horizonVersions).toHaveBeenCalledWith("coords_hud", "instance-1");
     expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
+  });
+
+  it("interroge le registre Horizon pour les mods natifs et affiche le build requis", async () => {
+    mocks.searchHorizon.mockResolvedValue([nativeHorizonProject]);
+    mocks.horizonVersions.mockResolvedValue(nativeHorizonVersions);
+    renderBrowser(<ProjectBrowser kind="native-mod" instance={horizonInstance} onContentInstalled={mocks.onContentInstalled} />);
+
+    expect(await screen.findByText("Zoom")).toBeInTheDocument();
+    expect(mocks.searchHorizon).toHaveBeenCalledWith("", "native-mod", "26.3", "horizon", 0, "relevance");
+    fireEvent.click(screen.getByRole("button", { name: "Installer" }));
+    expect(await screen.findByText(/horizon-native-mods/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Installer cette version" }));
+
+    await waitFor(() => expect(mocks.installHorizonProject).toHaveBeenCalledWith("zoom", "instance-1", "2.0.0"));
+    expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
+  });
+
+  it("installe un modpack Horizon depuis la Bibliothèque", async () => {
+    mocks.searchHorizon.mockResolvedValue([horizonModpackProject]);
+    renderBrowser(<ProjectBrowser kind="modpack" onModpackInstalled={mocks.onModpackInstalled} />);
+    await screen.findByText("Sodium");
+
+    fireEvent.click(screen.getByRole("button", { name: "Horizon" }));
+    expect(await screen.findByText("Atomic Industry")).toBeInTheDocument();
+    expect(mocks.searchHorizon).toHaveBeenCalledWith("", "modpack", "26.3", "horizon", 0, "relevance");
+
+    fireEvent.click(screen.getByRole("button", { name: "Installer" }));
+
+    await waitFor(() => expect(mocks.installHorizonModpack).toHaveBeenCalledWith("atomic_industry"));
+    expect(mocks.onModpackInstalled).toHaveBeenCalledWith(expect.objectContaining({ id: "horizon-pack" }));
   });
 
   it("bascule sur CurseForge et interroge l’API avec la clé configurée", async () => {

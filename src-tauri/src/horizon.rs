@@ -745,6 +745,12 @@ pub(crate) async fn launch(
     }
     let game_dir = state.store.game_dir(&instance.id);
     fs::create_dir_all(&game_dir)?;
+    let show_official_server = state
+        .store
+        .settings()
+        .map(|settings| settings.show_horizon_official_server)
+        .unwrap_or(false);
+    crate::horizon_servers::apply(&game_dir, show_official_server);
     let home = state.store.instance_dir(&instance.id).join("horizon");
     fs::create_dir_all(&home)?;
 

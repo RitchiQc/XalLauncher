@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Check, Download, ExternalLink, FolderOpen, HardDrive, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
+import { Check, Download, ExternalLink, FolderOpen, Globe2, HardDrive, KeyRound, MonitorCog, Moon, Palette, RefreshCw, Save, Sparkles, Sun } from "lucide-react";
 import { Button, PageHeader, ProgressBar, Toggle } from "@/components/UI";
 import { api, errorMessage } from "@/lib/api";
 import { confirmAction } from "@/lib/dialog";
@@ -104,6 +104,10 @@ export function SettingsPage() {
       <Toggle checked={form.reducedMotion} onChange={(value) => patch("reducedMotion", value)} label="Réduire les animations et transitions" />
     </div></section>
     <section className="settings-section panel"><header><Download /><div><h2>Téléchargements</h2><p>Contrôlez la charge réseau pendant l’installation du jeu et des contenus.</p></div></header><div className="settings-body"><label className="setting-row"><span><strong>Tâches simultanées</strong><small>Entre 1 et 32 téléchargements parallèles.</small></span><div className="number-control"><input type="range" min={1} max={32} value={form.downloadConcurrency} onChange={(event) => patch("downloadConcurrency", Number(event.target.value))} /><strong>{form.downloadConcurrency}</strong></div></label></div></section>
+    <section className="settings-section panel"><header><Globe2 /><div><h2>Horizon</h2><p>Contrôlez les serveurs ajoutés par le client natif.</p></div></header><div className="settings-body">
+      <Toggle checked={form.showHorizonOfficialServer} onChange={(value) => patch("showHorizonOfficialServer", value)} label="Afficher le serveur officiel Horizon (Horizon Official)" />
+      <div className="setting-row"><span><small>Désactivé par défaut : XalLauncher empêche Horizon d’ajouter son SMP officiel à la liste des serveurs de vos instances. Les entrées déjà présentes sont retirées au prochain lancement, après une sauvegarde de servers.dat. Vos propres serveurs sont conservés.</small></span></div>
+    </div></section>
     <section className="settings-section panel"><header><KeyRound /><div><h2>CurseForge</h2><p>Recherchez et installez les mods, resource packs, shaders et modpacks de CurseForge.</p></div></header><div className="settings-body">
       <div className="setting-row"><span><strong>Clé API</strong><small>{curseforge?.source === "builtin" ? "CurseForge est activé pour cette version : la clé est intégrée au launcher et n’est jamais affichée." : curseforge?.configured ? `Configurée via ${curseforge.source === "environment" ? "la variable XAL_CURSEFORGE_API_KEY" : "le Coffre d’identification Windows"}.` : "Aucune clé configurée. Cette version de développement nécessite une clé personnelle."}</small><small>{curseforge?.source === "builtin" ? "Les self-builds sans clé intégrée peuvent utiliser le champ ci-dessous." : "La clé n’est jamais renvoyée à l’interface ni écrite dans settings.json."}</small></span><span className="info-pill">{curseforge?.configured ? <><Check size={14} />{curseforge.source === "builtin" ? "Intégrée" : "Prête"}</> : "Non configurée"}</span></div>
       {curseforge === undefined ? <div className="panel-loading"><RefreshCw className="spin" />Vérification de la clé CurseForge…</div> : curseforge.source === "builtin" ? null : <>

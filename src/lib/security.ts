@@ -19,3 +19,23 @@ export function confirmHorizonContent(content: string): Promise<boolean> {
     "warning",
   );
 }
+
+export function confirmHorizonNative(content: string): Promise<boolean> {
+  return confirmAction(
+    `${content} est un mod natif Horizon. Son bundle sera installé pour un prochain build natif : ` +
+    "il sera compilé et exécuté avec les droits de votre compte, sans sandbox. " +
+    "N’installez que du contenu dont vous faites confiance. Continuer ?",
+    "Mod natif Horizon",
+    "warning",
+  );
+}
+
+export function confirmHorizonModpack(content: string): Promise<boolean> {
+  return confirmAction(
+    `${content} installe des mods de contenu et des mods natifs Horizon. ` +
+    "Les mods natifs nécessitent un build Horizon avant de pouvoir se charger et s’exécuteront " +
+    "avec les droits de votre compte, sans sandbox. Continuer ?",
+    "Modpack Horizon",
+    "warning",
+  );
+}
