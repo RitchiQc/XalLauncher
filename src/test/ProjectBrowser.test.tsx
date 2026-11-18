@@ -162,6 +162,20 @@ describe("ProjectBrowser", () => {
     expect(mocks.onContentInstalled).toHaveBeenCalledOnce();
   });
 
+  it("marque un mod natif Horizon installé", async () => {
+    mocks.searchHorizon.mockResolvedValue([nativeHorizonProject]);
+    mocks.horizonVersions.mockResolvedValue(nativeHorizonVersions);
+    const installedNative: ContentEntry = {
+      fileName: "zoom", kind: "native-mod", enabled: true, size: 2048, modifiedAt: "2026-10-29T00:00:00Z",
+      projectId: "zoom", projectTitle: "Zoom", versionId: "2.0.0", provider: "horizon",
+    };
+    renderBrowser(<ProjectBrowser kind="native-mod" instance={horizonInstance} installedContent={[installedNative]} onContentInstalled={mocks.onContentInstalled} />);
+
+    expect(await screen.findByText("Zoom")).toBeInTheDocument();
+    expect(screen.getByText("Installé")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Versions" })).toBeInTheDocument();
+  });
+
   it("charge la page suivante avec le bon décalage", async () => {
     const firstPage = Array.from({ length: 24 }, (_, index) => ({
       ...project, projectId: `mod-${index}`, slug: `mod-${index}`, title: `Mod ${index}`,

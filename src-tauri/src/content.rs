@@ -109,10 +109,7 @@ pub(crate) fn list_entries(
         }
         let path = item.path();
         let is_dir = item.file_type()?.is_dir();
-        if (kind == "world") != is_dir {
-            continue;
-        }
-        if kind == "native-mod" && !is_dir {
+        if (kind == "world" || kind == "native-mod") != is_dir {
             continue;
         }
         let file_meta = item.metadata()?;
@@ -430,8 +427,9 @@ pub async fn import_contents(
 
 #[cfg(test)]
 mod tests {
-    use super::{folder_for_kind, import_many};
-    use crate::models::Loader;
+    use super::{folder_for_kind, import_many, list_entries};
+    use crate::models::{Instance, Loader, ModuleState};
+    use crate::providers::common::ContentMetadata;
     use crate::store::Store;
 
     #[test]
@@ -472,6 +470,64 @@ mod tests {
             "horizon-native-mods"
         );
         assert!(folder_for_kind(Loader::Fabric, "native-mod").is_err());
+    }
+
+    #[test]
+    fn lists_installed_native_mod_bundles() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::temporary(directory.path());
+        store
+            .save_instances(&[Instance {
+                id: "instance".into(),
+                name: "Horizon".into(),
+                version_id: "26.3".into(),
+                loader: Loader::Horizon,
+                loader_version: None,
+                color: "#8b5cf6".into(),
+                memory_min: 512,
+                memory_max: 4096,
+                resolution_width: 1280,
+                resolution_height: 720,
+                fullscreen: false,
+                close_on_launch: false,
+                java_path: None,
+                java_major: None,
+                jvm_arguments: String::new(),
+                server_address: None,
+                icon_url: None,
+                icon_file: None,
+                modules: ModuleState::default(),
+                created_at: chrono::Utc::now(),
+                last_played_at: None,
+                total_play_seconds: 0,
+            }])
+            .unwrap();
+        let game_dir = store.game_dir("instance");
+        let native = game_dir.join("horizon-native-mods");
+        std::fs::create_dir_all(native.join("zoom")).unwrap();
+        std::fs::write(native.join("stray.txt"), b"ignored").unwrap();
+        let metadata = ContentMetadata {
+            project_id: "zoom".into(),
+            project_title: "Zoom".into(),
+            version_id: "2.0.0".into(),
+            icon_url: None,
+            provider: Some("horizon".into()),
+        };
+        std::fs::write(
+            native.join(".zoom.xal.json"),
+            serde_json::to_vec_pretty(&metadata).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(game_dir.join("horizon-mods.txt"), b"mod.zoom:true\n").unwrap();
+
+        let entries = list_entries(&store, "instance", "native-mod").unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].file_name, "zoom");
+        assert!(entries[0].enabled);
+        assert_eq!(entries[0].project_id.as_deref(), Some("zoom"));
+        assert_eq!(entries[0].version_id.as_deref(), Some("2.0.0"));
+        assert_eq!(entries[0].provider.as_deref(), Some("horizon"));
     }
 
     #[test]
