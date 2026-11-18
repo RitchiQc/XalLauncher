@@ -208,6 +208,13 @@ export interface ModrinthVersion {
   datePublished: string;
   gameVersions: string[];
   loaders: string[];
+  fileName?: string;
+}
+
+export interface CrossProviderMatch {
+  projectId: string;
+  fileName: string;
+  installedProvider?: ContentProvider;
 }
 
 export interface ServerEntry {

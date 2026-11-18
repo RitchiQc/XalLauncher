@@ -1,3 +1,4 @@
+use crate::content_meta::{self, ContentMetadata};
 use crate::download::{download_file_with_checksum, valid_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::{ensure_success, get_json};
@@ -74,6 +75,7 @@ pub(crate) async fn import_pack(
         &store,
         app.as_ref(),
         &game_dir,
+        &store.instance_dir(&id),
         &mut archive,
         &index,
         archive_prefix,
@@ -134,15 +136,34 @@ pub(crate) fn pack_relative<'a>(path: &'a str, archive_prefix: &str) -> Option<&
     }
 }
 
+fn legacy_metadata_key(relative: &str) -> Option<String> {
+    let (folder, file) = relative.split_once('/')?;
+    if !content_meta::CONTENT_FOLDERS.contains(&folder) {
+        return None;
+    }
+    let file = file.strip_prefix('.')?.strip_suffix(".xal.json")?;
+    let file = file.strip_suffix(".disabled").unwrap_or(file);
+    Some(format!("{folder}/{file}"))
+}
+
 async fn install_pack_files(
     client: &reqwest::Client,
     store: &Store,
     app: Option<&AppHandle>,
     game_dir: &Path,
+    instance_dir: &Path,
     archive: &mut zip::ZipArchive<fs::File>,
     index: &Value,
     archive_prefix: &str,
 ) -> Result<()> {
+    let mut legacy: std::collections::BTreeMap<String, ContentMetadata> =
+        std::collections::BTreeMap::new();
+    let mut exported: Option<Value> = None;
+    if let Ok(mut file) = archive.by_name(&format!("{archive_prefix}xallauncher-content.json")) {
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+        exported = serde_json::from_str(&content).ok();
+    }
     for number in 0..archive.len() {
         let mut entry = archive.by_index(number)?;
         let Some(path) = entry.enclosed_name() else {
@@ -152,6 +173,14 @@ async fn install_pack_files(
         let Some(relative) = pack_relative(&path_string, archive_prefix) else {
             continue;
         };
+        if let Some(key) = legacy_metadata_key(relative) {
+            let mut content = String::new();
+            entry.read_to_string(&mut content)?;
+            if let Ok(metadata) = serde_json::from_str::<ContentMetadata>(&content) {
+                legacy.insert(key, metadata);
+            }
+            continue;
+        }
         let target = game_dir.join(safe_relative(relative)?);
         if entry.is_dir() {
             fs::create_dir_all(target)?;
@@ -232,6 +261,10 @@ async fn install_pack_files(
     .buffer_unordered(concurrency)
     .try_collect::<Vec<()>>()
     .await?;
+    content_meta::import_entries(instance_dir, &legacy)?;
+    if let Some(document) = &exported {
+        content_meta::import_document(instance_dir, document)?;
+    }
     Ok(())
 }
 

@@ -63,7 +63,8 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - L’explorateur reste ouvert sur la page « Ajouter » après une installation, pour enchaîner plusieurs contenus sans revenir à la liste.
 - Filtrage par version de Minecraft et modloader, avec choix de la publication exacte à installer, y compris une version plus ancienne.
 - Installation des dépendances obligatoires CurseForge et Modrinth, respect de leurs éventuelles versions imposées et remplacement des anciennes versions d’un projet.
-- Identification des contenus et versions déjà installés dans l’explorateur, sans téléchargement redondant.
+- Identification des contenus et versions déjà installés dans l’explorateur, sans téléchargement redondant, y compris lorsqu’un projet a été installé depuis l’autre plateforme (détection croisée par empreinte CurseForge et SHA-1 Modrinth).
+- Les métadonnées des contenus installés (fournisseur, projet, version, icône) sont stockées dans `instances/<id>/metadata/` et non dans `mods`, `resourcepacks` ou `shaderpacks` : les dossiers de jeu restent propres pour les joueurs.
 - Téléchargements parallèles des mods et dépendances selon le nombre de tâches configuré, avec progression globale.
 - Installation de la dernière publication d’un modpack Modrinth, CurseForge ou Horizon (avec récupération de l’icône du projet), import de fichiers `.mrpack` et des archives `.zip` CurseForge ; les `.hpack` s’installent depuis la Bibliothèque via le registre Horizon.
 - Import de contenus locaux **par lot** : plusieurs `.jar` ou `.zip` à la fois, ou glisser-déposer dans l’onglet Mods / Resource packs / Shaders.
@@ -83,7 +84,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 | XalLauncher | `.mrpack` | ✅ | ✅ |
 
 - L’import détecte le format **par le contenu** de l’archive, pas par son extension.
-- Un pack exporté par XalLauncher contient `modrinth.index.json`, tous les fichiers dans `overrides/` et `xallauncher.json` (RAM, version de Java, résolution, JVM, modules, serveur). Il se réimporte sans téléchargement dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App.
+- Un pack exporté par XalLauncher contient `modrinth.index.json`, tous les fichiers dans `overrides/`, `xallauncher.json` (RAM, version de Java, résolution, JVM, modules, serveur) et `xallauncher-content.json` (fournisseur, projet et version des contenus installés). Il se réimporte sans téléchargement dans XalLauncher, Prism Launcher, MultiMC, ATLauncher et Modrinth App.
 - Les mondes et les captures sont exclus par défaut à l’export ; deux options permettent de les inclure.
 - **Formats non pris en charge** : ATLauncher, FTB, Technic et un dossier `.minecraft` brut.
 - Le pack de branding XalLauncher, les journaux, les rapports de crash et les caches sont toujours exclus de l’export.
@@ -195,7 +196,7 @@ Pour un self-build ou une version de développement sans clé intégrée, deux s
 
 La clé intégrée est compilée dans le binaire : elle est invisible dans l’interface, mais un utilisateur avancé peut techniquement l’extraire. Il faut donc une clé dédiée à XalLauncher, surveiller le quota et pouvoir la remplacer sans modifier le code. Les conditions de CurseForge imposent une clé non transférable : vérifiez auprès de CurseForge/Overwolf que votre clé est autorisée pour une distribution publique. Le modèle « clé du projet intégrée aux builds officiels, override possible pour les self-builds » est celui utilisé par plusieurs launchers open source.
 
-Les réponses de l’API ne sont pas mises en cache de façon persistante : seules les métadonnées minimales des contenus installés sont conservées dans leurs sidecars.
+Les réponses de l’API ne sont pas mises en cache de façon persistante : les métadonnées minimales des contenus installés (fournisseur, projet, version, icône) sont conservées dans `instances/<id>/metadata/`, hors du dossier de jeu. Les empreintes CurseForge (MurmurHash2) et SHA-1 servent uniquement à reconnaître un contenu déjà installé, y compris depuis l’autre plateforme.
 
 ## Dépannage de la connexion Microsoft
 
@@ -262,10 +263,11 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src-tauri/src/horizon.rs` : builds Nightly, préparation, JDK 25 et lancement natif Horizon.
 - `src-tauri/src/horizon_servers.rs` : masquage du SMP officiel Horizon (`horizon_official_server.txt`) et nettoyage ciblé de `servers.dat` avec sauvegarde.
 - `src-tauri/src/loaders.rs` : Fabric, Quilt, Forge et NeoForge.
-- `src-tauri/src/providers/` : intégration Modrinth, catalogue CurseForge et registre Horizon (mods `.hmod`, bundles natifs `.hnmod`, shaders `.hshader`, modpacks `.hpack`).
+- `src-tauri/src/providers/` : intégration Modrinth, catalogue CurseForge et registre Horizon (mods `.hmod`, bundles natifs `.hnmod`, shaders `.hshader`, modpacks `.hpack`), avec détection croisée par empreintes (`cross.rs`, `fingerprint.rs`).
 - `src-tauri/src/providers/curseforge/pack.rs` : import des modpacks CurseForge (`.zip` et catalogue) et overrides.
 - `src-tauri/src/secrets.rs` : clé API CurseForge dans le Coffre d’identification Windows.
 - `src-tauri/src/content.rs` : contenu local.
+- `src-tauri/src/content_meta.rs` : métadonnées des contenus installés, stockées hors du dossier de jeu et migrées depuis les anciens sidecars.
 - `src-tauri/src/modpacks.rs` : archives `.mrpack`.
 - `src-tauri/src/backup.rs` : sauvegardes des mondes.
 - `src-tauri/src/servers.rs` : protocole Server List Ping.
@@ -283,7 +285,7 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - CurseForge est activé dans les Releases officielles par une clé intégrée au build. Les self-builds sans secret doivent fournir une clé dans les paramètres ou via `XAL_CURSEFORGE_API_KEY`. La clé est extractible du binaire et son quota est partagé par tous les utilisateurs ; utilisez une clé dédiée et prévoyez sa rotation.
 - L’utilisation d’une clé intégrée pour une distribution publique doit être confirmée avec CurseForge/Overwolf ; XalLauncher ne peut pas garantir l’autorisation contractuelle de ce modèle.
 - Les mods dont l’auteur interdit la distribution via l’API CurseForge, ainsi que les modpacks contenant un fichier requis dans ce cas, ne peuvent pas être téléchargés ; XalLauncher affiche alors une erreur explicite.
-- La recherche et les dépendances CurseForge ne sont pas mises à jour automatiquement ; aucun fingerprint, monde CurseForge ou cache persistant des réponses API n’est géré.
+- La recherche et les dépendances CurseForge ne sont pas mises à jour automatiquement ; les empreintes servent à identifier les contenus déjà installés et à éviter les doublons inter-plateformes. La détection vers CurseForge nécessite la clé API CurseForge. Si un auteur publie des fichiers binairement différents sur Modrinth et CurseForge, la correspondance par empreinte peut échouer. Aucun monde CurseForge ni cache persistant des réponses API n’est géré.
 - Le canal de mise à jour lit `latest.json` sans authentification : le dépôt (ou l’hébergement du manifeste) doit être public, sinon la vérification échoue.
 - Essential n’a pas d’intégration dédiée ; il reste installable comme un mod Modrinth ordinaire.
 - Les capes personnalisées et les cosmétiques Essential ne sont pas modifiés par XalLauncher.

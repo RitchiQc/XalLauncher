@@ -1,3 +1,4 @@
+use crate::content_meta;
 use crate::error::{AppError, Result};
 use crate::models::{Instance, Loader, ModuleState, ProgressEvent};
 use crate::store::Store;
@@ -145,6 +146,7 @@ fn is_ignored_file(relative: &str) -> bool {
             | ".xal-performance-options"
     ) || name.ends_with(".xal-backup")
         || name.ends_with(".xal-tmp")
+        || name.ends_with(".xal.json")
         || name.ends_with(".part")
         || relative == "resourcepacks/XalLauncher-Branding.zip"
 }
@@ -230,6 +232,7 @@ pub(crate) fn export_sync(
             "Le dossier de jeu de cette instance est introuvable",
         ));
     }
+    let _ = content_meta::migrate_instance(store, &instance.id);
     let files = collect_files(&game_dir, options);
     let total = files.len() as u64;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
@@ -264,6 +267,13 @@ pub(crate) fn export_sync(
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
         )?;
         zip.write_all(&serde_json::to_vec_pretty(&exported)?)?;
+        zip.start_file(
+            "xallauncher-content.json",
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+        )?;
+        zip.write_all(&serde_json::to_vec_pretty(&content_meta::export_document(
+            &store.instance_dir(&instance.id),
+        ))?)?;
         let mut written = 0_u64;
         for path in files {
             let relative = path
@@ -355,6 +365,11 @@ mod tests {
         fs::create_dir_all(game_dir.join("resourcepacks")).unwrap();
         fs::create_dir_all(game_dir.join("saves/world")).unwrap();
         fs::write(game_dir.join("mods/a.jar"), b"jar").unwrap();
+        fs::write(
+            game_dir.join("mods/.a.jar.xal.json"),
+            r#"{"projectId":"sodium","projectTitle":"Sodium","versionId":"1","iconUrl":null,"provider":"modrinth"}"#,
+        )
+        .unwrap();
         fs::write(game_dir.join("logs/latest.log"), b"log").unwrap();
         fs::write(
             game_dir.join("resourcepacks/XalLauncher-Branding.zip"),
@@ -380,6 +395,8 @@ mod tests {
         let names = collect_names(&destination);
         assert!(names.contains(&"modrinth.index.json".to_string()));
         assert!(names.contains(&"xallauncher.json".to_string()));
+        assert!(names.contains(&"xallauncher-content.json".to_string()));
+        assert!(!names.iter().any(|name| name.ends_with(".xal.json")));
         assert!(names.contains(&"overrides/mods/a.jar".to_string()));
         assert!(names.contains(&"overrides/options.txt".to_string()));
         assert!(names.contains(&"overrides/resourcepacks/Other.zip".to_string()));

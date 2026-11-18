@@ -1,12 +1,11 @@
 use crate::error::{AppError, Result};
 use crate::models::{ContentEntry, Loader};
-use crate::providers::common::ContentMetadata;
 use crate::providers::horizon::{mod_enabled, mod_id_from_file, set_mod_enabled};
 use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-fn folder_for_kind(loader: Loader, kind: &str) -> Result<&'static str> {
+pub(crate) fn folder_for_kind(loader: Loader, kind: &str) -> Result<&'static str> {
     match kind {
         "mod" => Ok(if loader == Loader::Horizon {
             "horizon-mods"
@@ -34,28 +33,6 @@ fn safe_name(name: &str) -> Result<&str> {
         return Err(AppError::new("Nom de fichier invalide"));
     }
     Ok(name)
-}
-
-fn sidecar(path: &Path) -> PathBuf {
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    path.with_file_name(format!(".{name}.xal.json"))
-}
-
-fn metadata(path: &Path) -> Option<ContentMetadata> {
-    let direct = sidecar(path);
-    let alternate = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| name.strip_suffix(".disabled"))
-        .map(|name| path.with_file_name(format!(".{name}.xal.json")));
-    fs::read(&direct)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .or_else(|| {
-            alternate
-                .and_then(|path| fs::read(path).ok())
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        })
 }
 
 fn directory_size(path: &Path) -> u64 {
@@ -90,11 +67,14 @@ pub(crate) fn list_entries(
     kind: &str,
 ) -> Result<Vec<ContentEntry>> {
     let loader = store.instance(instance_id)?.loader;
+    let instance_dir = store.instance_dir(instance_id);
     let game_dir = store.game_dir(instance_id);
-    let folder = game_dir.join(folder_for_kind(loader, kind)?);
+    let folder_name = folder_for_kind(loader, kind)?;
+    let folder = game_dir.join(folder_name);
     if !folder.exists() {
         return Ok(Vec::new());
     }
+    crate::content_meta::migrate_folder(&instance_dir, folder_name);
     let mut entries = Vec::new();
     for item in fs::read_dir(folder)?.flatten() {
         let name = item.file_name().to_string_lossy().to_string();
@@ -116,7 +96,7 @@ pub(crate) fn list_entries(
         let modified = file_meta
             .modified()
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        let metadata = metadata(&path);
+        let metadata = crate::content_meta::read(&instance_dir, folder_name, &name);
         entries.push(ContentEntry {
             enabled: if loader == Loader::Horizon && kind == "native-mod" {
                 mod_enabled(&game_dir, &name)
@@ -214,7 +194,8 @@ pub fn delete_content(
     let name = safe_name(&file_name)?;
     let loader = state.store.instance(&instance_id)?.loader;
     let game_dir = state.store.game_dir(&instance_id);
-    let path = game_dir.join(folder_for_kind(loader, &kind)?).join(name);
+    let folder = folder_for_kind(loader, &kind)?;
+    let path = game_dir.join(folder).join(name);
     if path.is_dir() {
         fs::remove_dir_all(&path)?;
     } else if path.is_file() {
@@ -223,10 +204,7 @@ pub fn delete_content(
     if loader == Loader::Horizon && (kind == "mod" || kind == "native-mod") {
         let _ = set_mod_enabled(&game_dir, mod_id_from_file(name), false);
     }
-    let _ = fs::remove_file(sidecar(&path));
-    if let Some(base) = name.strip_suffix(".disabled") {
-        let _ = fs::remove_file(path.with_file_name(format!(".{base}.xal.json")));
-    }
+    crate::content_meta::remove(&state.store.instance_dir(&instance_id), folder, name);
     Ok(())
 }
 
@@ -329,9 +307,8 @@ fn copy_content(
         .and_then(|name| name.to_str())
         .ok_or_else(|| AppError::new("Nom de fichier invalide"))?;
     safe_name(name)?;
-    let folder = store
-        .game_dir(instance_id)
-        .join(folder_for_kind(loader, kind)?);
+    let folder_name = folder_for_kind(loader, kind)?;
+    let folder = store.game_dir(instance_id).join(folder_name);
     fs::create_dir_all(&folder)?;
     let destination = folder.join(name);
     if destination.exists() {
@@ -342,7 +319,8 @@ fn copy_content(
     let modified = file_meta
         .modified()
         .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-    let metadata = metadata(&destination);
+    let metadata =
+        crate::content_meta::read(&store.instance_dir(instance_id), folder_name, name);
     Ok(ContentEntry {
         enabled: true,
         file_name: name.to_string(),
@@ -429,7 +407,7 @@ pub async fn import_contents(
 mod tests {
     use super::{folder_for_kind, import_many, list_entries};
     use crate::models::{Instance, Loader, ModuleState};
-    use crate::providers::common::ContentMetadata;
+    use crate::content_meta::ContentMetadata;
     use crate::store::Store;
 
     #[test]
@@ -528,6 +506,11 @@ mod tests {
         assert_eq!(entries[0].project_id.as_deref(), Some("zoom"));
         assert_eq!(entries[0].version_id.as_deref(), Some("2.0.0"));
         assert_eq!(entries[0].provider.as_deref(), Some("horizon"));
+        assert!(!native.join(".zoom.xal.json").exists());
+        assert!(store
+            .instance_dir("instance")
+            .join("metadata/horizon-native-mods/zoom.xal.json")
+            .is_file());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBrowser } from "@/components/ProjectBrowser";
@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   installModpack: vi.fn(),
   installCurseforgeModpack: vi.fn(),
   curseforgeKeyStatus: vi.fn(),
+  crossProviderMatches: vi.fn(),
   perform: vi.fn(),
   notify: vi.fn(),
   onContentInstalled: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("@/lib/api", () => ({
     installModpack: mocks.installModpack,
     installCurseforgeModpack: mocks.installCurseforgeModpack,
     curseforgeKeyStatus: mocks.curseforgeKeyStatus,
+    crossProviderMatches: mocks.crossProviderMatches,
   },
   errorMessage: (error: unknown) => typeof error === "string" ? error : "Erreur",
 }));
@@ -80,7 +82,7 @@ const curseforgeProject: ProjectHit = {
   downloads: 3000, follows: 200, projectType: "mod", versions: ["1.21.1"], provider: "curseforge",
 };
 const curseforgeVersions: ModrinthVersion[] = [
-  { id: "5000", name: "JEI 19.0", versionNumber: "19.0", versionType: "release", datePublished: "2025-03-01T00:00:00Z", gameVersions: ["1.21.1"], loaders: ["Fabric"] },
+  { id: "5000", name: "JEI 19.0", versionNumber: "19.0", versionType: "release", datePublished: "2025-03-01T00:00:00Z", gameVersions: ["1.21.1"], loaders: ["Fabric"], fileName: "jei-1.21.1.jar" },
 ];
 const nativeHorizonProject: ProjectHit = {
   projectId: "zoom", slug: "zoom", title: "Zoom", description: "Zoom natif", author: "Horizon",
@@ -123,6 +125,7 @@ beforeEach(() => {
   mocks.installHorizonModpack.mockResolvedValue(horizonPackInstance);
   mocks.installCurseforgeModpack.mockResolvedValue({ id: "cf-pack", name: "JEI Pack", versionId: "1.21.1", loader: "fabric", color: "#8b5cf6", memoryMin: 512, memoryMax: 4096, resolutionWidth: 1280, resolutionHeight: 720, fullscreen: false, closeOnLaunch: false, jvmArguments: "", createdAt: "2025-03-01T00:00:00Z", totalPlaySeconds: 0 });
   mocks.curseforgeKeyStatus.mockResolvedValue({ configured: true, source: "vault" });
+  mocks.crossProviderMatches.mockResolvedValue([]);
   mocks.perform.mockImplementation(async (action: () => Promise<unknown>) => action());
   mocks.onContentInstalled.mockResolvedValue(undefined);
 });
@@ -292,5 +295,27 @@ describe("ProjectBrowser", () => {
 
     await waitFor(() => expect(mocks.installCurseforgeModpack).toHaveBeenCalledWith("238222"));
     expect(mocks.onModpackInstalled).toHaveBeenCalledWith(expect.objectContaining({ id: "cf-pack" }));
+  });
+
+  it("reconnaît un contenu CurseForge déjà installé depuis Modrinth", async () => {
+    mocks.crossProviderMatches.mockResolvedValue([
+      { projectId: "238222", fileName: "jei-1.21.1.jar", installedProvider: "modrinth" },
+    ]);
+    renderBrowser(<ProjectBrowser kind="mod" instance={instance} onContentInstalled={mocks.onContentInstalled} />);
+    await screen.findByText("Sodium");
+
+    fireEvent.click(screen.getByRole("button", { name: "CurseForge" }));
+    await screen.findByText("JEI");
+    expect(mocks.crossProviderMatches).toHaveBeenCalledWith("instance-1", "mod", "curseforge");
+
+    const row = screen.getByText("JEI").closest("article");
+    expect(row).not.toBeNull();
+    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "Versions" }));
+
+    expect(await screen.findByText(/Déjà installé depuis Modrinth/)).toBeInTheDocument();
+    const select = await screen.findByRole("combobox", { name: "Version du contenu" });
+    expect(select).toHaveValue("5000");
+    expect(screen.getByRole("button", { name: "Version installée" })).toBeDisabled();
+    expect(mocks.installCurseforgeProject).not.toHaveBeenCalled();
   });
 });

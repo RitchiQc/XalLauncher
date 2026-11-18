@@ -405,6 +405,7 @@ fn should_skip_entry(relative: &str, root_layout: bool) -> bool {
     if relative.ends_with(".part")
         || relative.ends_with(".xal-tmp")
         || relative.ends_with(".xal-backup")
+        || relative.ends_with(".xal.json")
     {
         return true;
     }

@@ -192,7 +192,7 @@ pub async fn import_archive(
     fs::create_dir_all(&game_dir)?;
     let result = async {
         extract_overrides(&mut archive, &prefix, &game_dir)?;
-        install_pack_files(client, store, app, &manifest, &game_dir).await
+        install_pack_files(client, store, app, &manifest, &store.instance_dir(&id)).await
     }
     .await;
     if let Err(error) = result {
@@ -286,7 +286,7 @@ async fn install_pack_files(
     store: &Store,
     app: Option<&AppHandle>,
     manifest: &Manifest,
-    game_dir: &std::path::Path,
+    instance_dir: &std::path::Path,
 ) -> Result<()> {
     let required: Vec<&ManifestFile> = manifest.files.iter().filter(|file| file.required).collect();
     if required.is_empty() {
@@ -353,7 +353,7 @@ async fn install_pack_files(
         let completed = completed.clone();
         let key = key.clone();
         async move {
-            install_file(client, &key, game_dir, &project, &file, &project_type).await?;
+            install_file(client, &key, instance_dir, &project, &file, &project_type).await?;
             let current = completed.fetch_add(1, Ordering::Relaxed) + 1;
             if let Some(app) = &app {
                 let _ = app.emit(

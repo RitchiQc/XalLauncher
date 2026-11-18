@@ -2,7 +2,7 @@ use crate::download::{download_file_with_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::ensure_success;
 use crate::models::{ContentEntry, Instance, Loader, ProgressEvent, ProjectHit};
-use crate::providers::common::ContentMetadata;
+use crate::content_meta::ContentMetadata;
 use crate::providers::modrinth::ModrinthVersion;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -408,6 +408,7 @@ pub async fn list_horizon_versions(
             date_published: version.published.clone(),
             game_versions: vec![version.game.clone()],
             loaders: vec!["horizon".into()],
+            file_name: None,
         })
         .collect())
 }
@@ -480,11 +481,12 @@ pub(crate) fn set_mod_enabled(game_dir: &Path, id: &str, enabled: bool) -> Resul
 }
 
 fn installed_horizon(
-    game_dir: &Path,
+    instance_dir: &Path,
     project_id: &str,
     version_id: &str,
     kind: &str,
 ) -> Option<ContentEntry> {
+    let game_dir = instance_dir.join("game");
     for (folder_kind, folder) in [
         ("mod", "horizon-mods"),
         ("native-mod", NATIVE_DIR),
@@ -494,28 +496,13 @@ fn installed_horizon(
         if folder_kind != kind {
             continue;
         }
-        let directory = game_dir.join(folder);
-        let Ok(entries) = fs::read_dir(&directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with('.') || !name.ends_with(".xal.json") {
-                continue;
-            }
-            let Ok(bytes) = fs::read(entry.path()) else {
-                continue;
-            };
-            let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
-                continue;
-            };
+        crate::content_meta::migrate_folder(instance_dir, folder);
+        for (file_name, metadata) in crate::content_meta::entries(instance_dir, folder) {
             if metadata.project_id != project_id || metadata.version_id != version_id {
                 continue;
             }
-            let Some(file_name) = name.trim_start_matches('.').strip_suffix(".xal.json") else {
-                continue;
-            };
-            let enabled_path = directory.join(file_name);
+            let directory = game_dir.join(folder);
+            let enabled_path = directory.join(&file_name);
             let disabled_path = directory.join(format!("{file_name}.disabled"));
             let (path, file_enabled) = if enabled_path.is_file() {
                 (enabled_path, true)
@@ -527,9 +514,9 @@ fn installed_horizon(
                 continue;
             };
             let enabled = if kind == "mod" {
-                file_enabled && mod_enabled(game_dir, mod_id_from_file(file_name))
+                file_enabled && mod_enabled(&game_dir, mod_id_from_file(&file_name))
             } else if kind == "native-mod" {
-                file_enabled && mod_enabled(game_dir, file_name)
+                file_enabled && mod_enabled(&game_dir, &file_name)
             } else {
                 file_enabled
             };
@@ -565,36 +552,6 @@ pub(crate) fn mod_id_from_file(file_name: &str) -> &str {
         .strip_suffix(".hmod")
         .or_else(|| file_name.strip_suffix(".hmod.disabled"))
         .unwrap_or(file_name)
-}
-
-fn remove_previous_versions(directory: &Path, project_id: &str, keep_file: &str) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with('.') || !name.ends_with(".xal.json") {
-            continue;
-        }
-        let Ok(bytes) = fs::read(entry.path()) else {
-            continue;
-        };
-        let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
-            continue;
-        };
-        if metadata.project_id != project_id {
-            continue;
-        }
-        let Some(file_name) = name.trim_start_matches('.').strip_suffix(".xal.json") else {
-            continue;
-        };
-        if file_name == keep_file {
-            continue;
-        }
-        let _ = fs::remove_file(entry.path());
-        let _ = fs::remove_file(directory.join(file_name));
-        let _ = fs::remove_file(directory.join(format!("{file_name}.disabled")));
-    }
 }
 
 fn extract_hnmod(archive: &Path, destination: &Path) -> Result<()> {
@@ -655,10 +612,11 @@ fn validate_native_manifest(directory: &Path, project_id: &str, version_id: &str
 async fn install_horizon_native(
     project: &Project,
     version: &Version,
-    game_dir: &Path,
+    instance_dir: &Path,
     state: &crate::AppState,
     app: &AppHandle,
 ) -> Result<ContentEntry> {
+    let game_dir = instance_dir.join("game");
     if !safe_file_name(&project.id) {
         return Err(AppError::new("Identifiant de mod natif Horizon dangereux"));
     }
@@ -724,11 +682,8 @@ async fn install_horizon_native(
         icon_url: project.icon.clone(),
         provider: Some("horizon".into()),
     };
-    fs::write(
-        directory.join(format!(".{}.xal.json", project.id)),
-        serde_json::to_vec_pretty(&metadata)?,
-    )?;
-    set_mod_enabled(game_dir, &project.id, true)?;
+    crate::content_meta::write(instance_dir, NATIVE_DIR, &project.id, &metadata)?;
+    set_mod_enabled(&game_dir, &project.id, true)?;
     Ok(ContentEntry {
         file_name: project.id.clone(),
         kind: "native-mod".into(),
@@ -774,12 +729,13 @@ pub async fn install_horizon_project(
         ));
     }
     let checksum = Checksum::Sha256(sha256(&version.file.sha256)?);
-    let game_dir = state.store.game_dir(&instance_id);
-    if let Some(installed) = installed_horizon(&game_dir, &project.id, &version.version, kind) {
+    let instance_dir = state.store.instance_dir(&instance_id);
+    let game_dir = instance_dir.join("game");
+    if let Some(installed) = installed_horizon(&instance_dir, &project.id, &version.version, kind) {
         return Ok(installed);
     }
     if kind == "native-mod" {
-        return install_horizon_native(project, version, &game_dir, state.inner(), &app).await;
+        return install_horizon_native(project, version, &instance_dir, state.inner(), &app).await;
     }
     let (folder, file_name) = match kind {
         "mod" => ("horizon-mods", format!("{}.hmod", project.id)),
@@ -811,7 +767,13 @@ pub async fn install_horizon_project(
             project.name, version.file.size
         )));
     }
-    remove_previous_versions(&directory, &project.id, &file_name);
+    crate::providers::common::remove_previous_versions(
+        &instance_dir,
+        folder,
+        "horizon",
+        &project.id,
+        &file_name,
+    );
     if kind == "mod" {
         let _ = fs::remove_file(directory.join(format!("{}.hmod.disabled", project.id)));
         set_mod_enabled(&game_dir, &project.id, true)?;
@@ -823,10 +785,7 @@ pub async fn install_horizon_project(
         icon_url: project.icon.clone(),
         provider: Some("horizon".into()),
     };
-    fs::write(
-        directory.join(format!(".{file_name}.xal.json")),
-        serde_json::to_vec_pretty(&metadata)?,
-    )?;
+    crate::content_meta::write(&instance_dir, folder, &file_name, &metadata)?;
     let _ = app.emit(
         "download-progress",
         ProgressEvent {
@@ -970,11 +929,12 @@ fn override_allowed(path: &str, mods: &HashSet<&str>) -> bool {
 async fn install_pack_content(
     project: &Project,
     version: &Version,
-    game_dir: &Path,
+    instance_dir: &Path,
     enabled: bool,
     state: &crate::AppState,
     app: &AppHandle,
 ) -> Result<()> {
+    let game_dir = instance_dir.join("game");
     if !safe_file_name(&version.file.name)
         || !version.file.name.to_ascii_lowercase().ends_with(".hmod")
         || !DOWNLOAD_HOSTS
@@ -1009,9 +969,15 @@ async fn install_pack_content(
             project.name, version.file.size
         )));
     }
-    remove_previous_versions(&directory, &project.id, &file_name);
+    crate::providers::common::remove_previous_versions(
+        instance_dir,
+        "horizon-mods",
+        "horizon",
+        &project.id,
+        &file_name,
+    );
     let _ = fs::remove_file(directory.join(format!("{}.hmod.disabled", project.id)));
-    set_mod_enabled(game_dir, &project.id, enabled)?;
+    set_mod_enabled(&game_dir, &project.id, enabled)?;
     let metadata = ContentMetadata {
         project_id: project.id.clone(),
         project_title: project.name.clone(),
@@ -1019,10 +985,7 @@ async fn install_pack_content(
         icon_url: project.icon.clone(),
         provider: Some("horizon".into()),
     };
-    fs::write(
-        directory.join(format!(".{file_name}.xal.json")),
-        serde_json::to_vec_pretty(&metadata)?,
-    )?;
+    crate::content_meta::write(instance_dir, "horizon-mods", &file_name, &metadata)?;
     Ok(())
 }
 
@@ -1032,8 +995,9 @@ async fn install_pack_files(
     app: &AppHandle,
     index: &Index,
     manifest: &PackManifest,
-    game_dir: &Path,
+    instance_dir: &Path,
 ) -> Result<()> {
+    let game_dir = instance_dir.join("game");
     let total = manifest.mods.len() as u64;
     let _ = app.emit(
         "download-progress",
@@ -1047,12 +1011,12 @@ async fn install_pack_files(
     for (number, requirement) in manifest.mods.iter().enumerate() {
         let (project, version) = pack_requirement(index, requirement)?;
         if project.kind == "native-mod" {
-            install_horizon_native(project, version, game_dir, state, app).await?;
+            install_horizon_native(project, version, instance_dir, state, app).await?;
             if !requirement.on {
-                set_mod_enabled(game_dir, &project.id, false)?;
+                set_mod_enabled(&game_dir, &project.id, false)?;
             }
         } else {
-            install_pack_content(project, version, game_dir, requirement.on, state, app).await?;
+            install_pack_content(project, version, instance_dir, requirement.on, state, app).await?;
         }
         let _ = app.emit(
             "download-progress",
@@ -1064,7 +1028,7 @@ async fn install_pack_files(
             },
         );
     }
-    extract_pack_overrides(archive, game_dir, manifest)
+    extract_pack_overrides(archive, &game_dir, manifest)
 }
 
 fn extract_pack_overrides(archive: &Path, game_dir: &Path, manifest: &PackManifest) -> Result<()> {
@@ -1170,10 +1134,18 @@ pub async fn install_horizon_modpack(
         }
     };
     let id = uuid::Uuid::new_v4().to_string();
-    let game_dir = state.store.game_dir(&id);
+    let instance_dir = state.store.instance_dir(&id);
+    let game_dir = instance_dir.join("game");
     fs::create_dir_all(&game_dir)?;
-    if let Err(error) =
-        install_pack_files(&cache, state.inner(), &app, &index, &manifest, &game_dir).await
+    if let Err(error) = install_pack_files(
+        &cache,
+        state.inner(),
+        &app,
+        &index,
+        &manifest,
+        &instance_dir,
+    )
+    .await
     {
         let _ = fs::remove_dir_all(state.store.instance_dir(&id));
         let _ = fs::remove_file(&cache);

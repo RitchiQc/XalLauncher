@@ -7,7 +7,7 @@ import { api, errorMessage } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
 import { confirmCodeExecution, confirmHorizonModpack, confirmHorizonNative } from "@/lib/security";
 import { useLauncher } from "@/state/LauncherContext";
-import type { ContentEntry, ContentProvider, Instance, ModrinthVersion, ProjectHit, SearchIndex } from "@/types";
+import type { ContentEntry, ContentProvider, CrossProviderMatch, Instance, ModrinthVersion, ProjectHit, SearchIndex } from "@/types";
 
 export type BrowserKind = "mod" | "native-mod" | "modpack" | "resourcepack" | "shader";
 
@@ -47,6 +47,14 @@ function matchesProject(item: ContentEntry, project: ProjectHit, fallback: Conte
   return item.projectId === project.projectId && itemProvider === projectProvider;
 }
 
+function normalizeFileName(name: string): string {
+  return name.replace(/\.disabled$/i, "").toLowerCase();
+}
+
+function installedProviderLabel(provider?: ContentProvider): string {
+  return provider === "curseforge" ? "CurseForge" : provider === "modrinth" ? "Modrinth" : "un fichier local";
+}
+
 type Props = {
   kind: BrowserKind;
   instance?: Instance;
@@ -55,7 +63,9 @@ type Props = {
   onModpackInstalled?: (instance: Instance) => void;
 };
 
-export function ProjectBrowser({ kind, instance, installedContent = [], onContentInstalled, onModpackInstalled }: Props) {
+const EMPTY_CONTENT: ContentEntry[] = [];
+
+export function ProjectBrowser({ kind, instance, installedContent = EMPTY_CONTENT, onContentInstalled, onModpackInstalled }: Props) {
   const { perform, notify } = useLauncher();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -78,6 +88,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
   const [installing, setInstalling] = useState<string>();
   const [selectedProject, setSelectedProject] = useState<ProjectHit>();
   const [versions, setVersions] = useState<ModrinthVersion[]>([]);
+  const [crossMatches, setCrossMatches] = useState<CrossProviderMatch[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [versionsLoading, setVersionsLoading] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -85,7 +96,14 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
   const provider: ContentProvider = instance?.loader === "horizon" ? "horizon" : selectedProvider;
   const providerLabel = provider === "horizon" ? "Horizon" : provider === "curseforge" ? "CurseForge" : "Modrinth";
   const selectedVersion = versions.find((version) => version.id === selectedVersionId);
-  const selectedVersionInstalled = Boolean(selectedProject && installedContent.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === selectedVersionId));
+  const crossFor = (project: ProjectHit) => crossMatches.find((match) => match.projectId === project.projectId);
+  const projectInstalled = (project: ProjectHit) => installedContent.some((item) => matchesProject(item, project, provider)) || Boolean(crossFor(project));
+  const crossVersionInstalled = (project: ProjectHit, version?: ModrinthVersion) => {
+    const cross = crossFor(project);
+    return Boolean(cross && version?.fileName && normalizeFileName(version.fileName) === normalizeFileName(cross.fileName));
+  };
+  const selectedCross = selectedProject ? crossFor(selectedProject) : undefined;
+  const selectedVersionInstalled = Boolean(selectedProject && (installedContent.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === selectedVersionId) || crossVersionInstalled(selectedProject, selectedVersion)));
 
   useEffect(() => {
     if (provider !== "curseforge") {
@@ -110,6 +128,18 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
       });
     return () => { cancelled = true; };
   }, [provider]);
+
+  useEffect(() => {
+    if (!instance || kind === "modpack" || provider === "horizon") {
+      setCrossMatches([]);
+      return;
+    }
+    let cancelled = false;
+    api.crossProviderMatches(instance.id, kind, provider)
+      .then((matches) => { if (!cancelled) setCrossMatches(matches); })
+      .catch(() => { if (!cancelled) setCrossMatches([]); });
+    return () => { cancelled = true; };
+  }, [instance, kind, provider, installedContent]);
 
   function chooseProvider(next: "modrinth" | "curseforge" | "horizon") {
     if (next === selectedProvider) return;
@@ -235,7 +265,7 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     <div className="browser-compatibility">{kind === "modpack" ? "Chaque modpack créera une nouvelle instance isolée." : provider === "horizon" ? `Contenus Horizon compatibles avec Minecraft ${instance?.versionId ?? "26.3"}` : `Contenus compatibles avec Minecraft ${instance?.versionId} · ${instance?.loader}`}</div>
     {provider === "curseforge" && curseforgeChecking ? <div className="panel-loading"><RefreshCw className="spin" />Vérification de la clé CurseForge…</div> : provider === "curseforge" && curseforgeReady === false ? <EmptyState icon={<KeyRound size={32} />} title="Clé API CurseForge requise" description="Ajoutez votre clé personnelle dans les paramètres. Elle reste dans le Coffre d’identification Windows et n’est jamais partagée." action={<Button onClick={() => navigate("/settings")}>Configurer CurseForge</Button>} /> : loading ? <div className="project-grid">{Array.from({ length: 6 }, (_, index) => <div className="project-card skeleton" key={index} />)}</div> : results.length ? <>
       <div className="project-grid">{results.map((project) => {
-        const installed = installedContent.some((item) => matchesProject(item, project, provider));
+        const installed = projectInstalled(project);
         return <article className="project-card" key={`${project.provider ?? provider}-${project.projectId}`}>
           <button className="project-icon" onClick={() => void openUrl(projectUrl(project))} title={`Ouvrir sur ${providerLabelFor(project, provider)}`}>{project.iconUrl ? <img src={project.iconUrl} alt="" /> : <PackageSearch />}</button>
           <div className="project-info"><div className="project-title"><h3>{project.title}</h3>{installed ? <span className="provider-badge"><Check size={12} />Installé</span> : <span className="provider-badge">{providerLabelFor(project, provider)}</span>}<span>par {project.author}</span></div><p>{project.description}</p><div className="project-stats"><span><Download size={14} />{formatNumber(project.downloads)}</span><span><Heart size={14} />{formatNumber(project.follows)}</span><button onClick={() => void openUrl(projectUrl(project))}>Détails<ExternalLink size={13} /></button></div></div>
@@ -248,13 +278,14 @@ export function ProjectBrowser({ kind, instance, installedContent = [], onConten
     </> : <EmptyState icon={<PackageSearch size={32} />} title="Aucun contenu compatible" description={provider === "horizon" ? (kind === "shader" ? "Aucun shader Horizon compatible avec les lignes d’API servies par ce build. Modifiez votre recherche." : kind === "native-mod" ? "Aucun mod natif Horizon compatible avec ce build. Les versions marquées cassées sont masquées." : "Aucun projet Horizon compatible avec Minecraft 26.3. Modifiez votre recherche.") : "Modifiez votre recherche ou utilisez une instance avec une autre version de Minecraft."} />}
     {selectedProject ? <Modal title={`Installer ${selectedProject.title}`} description="Choisissez la publication compatible avec cette instance." onClose={closeVersions}>
       {versionsLoading ? <div className="panel-loading">Chargement des versions…</div> : versions.length ? <>
-        <label className="field field-full"><span>Version du contenu</span><select autoFocus value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)} disabled={Boolean(installing)}>{versions.map((version) => <option key={version.id} value={version.id}>{version.versionNumber} · {version.versionType}{installedContent.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === version.id) ? " · installée" : ""}</option>)}</select></label>
+        <label className="field field-full"><span>Version du contenu</span><select autoFocus value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)} disabled={Boolean(installing)}>{versions.map((version) => <option key={version.id} value={version.id}>{version.versionNumber} · {version.versionType}{(installedContent.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === version.id) || crossVersionInstalled(selectedProject, version)) ? " · installée" : ""}</option>)}</select></label>
         {selectedVersion ? <dl className="version-details"><div><dt>Nom</dt><dd>{selectedVersion.name}</dd></div><div><dt>Canal</dt><dd><span className={`version-channel ${selectedVersion.versionType}`}>{selectedVersion.versionType}</span></dd></div><div><dt>Publication</dt><dd>{formatDate(selectedVersion.datePublished)}</dd></div><div><dt>Minecraft</dt><dd>{selectedVersion.gameVersions.join(", ")}</dd></div><div><dt>Loaders</dt><dd>{selectedVersion.loaders.join(", ") || "Tous"}</dd></div></dl> : null}
+        {selectedCross ? <p className="provider-note">Déjà installé depuis {installedProviderLabel(selectedCross.installedProvider)} ({selectedCross.fileName}). Une nouvelle installation remplacera ce fichier.</p> : null}
+
         {provider === "horizon" && kind === "native-mod" ? <p className="provider-note">Ce bundle sera installé dans horizon-native-mods. Il devra être compilé par un build natif Horizon avant de se charger.</p> : null}
       </> : <EmptyState icon={<PackageSearch />} title="Aucune version compatible" description="Ce projet ne propose aucune publication pour cette instance." />}
-      <footer className="modal-footer"><Button variant="secondary" disabled={Boolean(installing)} onClick={closeVersions}>Annuler</Button><Button loading={installing === selectedProject.projectId} disabled={!selectedVersionId || versionsLoading || selectedVersionInstalled} onClick={() => void installSelected()}>{selectedVersionInstalled ? <Check size={16} /> : <Download size={16} />}{selectedVersionInstalled ? "Version installée" : installedContent.some((item) => matchesProject(item, selectedProject, provider)) ? "Remplacer par cette version" : "Installer cette version"}</Button></footer>
+      <footer className="modal-footer"><Button variant="secondary" disabled={Boolean(installing)} onClick={closeVersions}>Annuler</Button><Button loading={installing === selectedProject.projectId} disabled={!selectedVersionId || versionsLoading || selectedVersionInstalled} onClick={() => void installSelected()}>{selectedVersionInstalled ? <Check size={16} /> : <Download size={16} />}{selectedVersionInstalled ? "Version installée" : projectInstalled(selectedProject) ? "Remplacer par cette version" : "Installer cette version"}</Button></footer>
     </Modal> : null}
   </div>;
 }
-
 

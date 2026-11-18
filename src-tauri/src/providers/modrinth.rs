@@ -2,7 +2,8 @@ use crate::download::{download_file_with_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::{ensure_success, get_json};
 use crate::models::{ContentEntry, Loader, ProgressEvent, ProjectHit};
-use crate::providers::common::{self, ContentMetadata};
+use crate::content_meta::ContentMetadata;
+use crate::providers::common;
 use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -113,6 +114,8 @@ pub struct ModrinthVersion {
     pub date_published: String,
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
+    #[serde(default)]
+    pub file_name: Option<String>,
 }
 
 fn version_summary(version: &Value) -> ModrinthVersion {
@@ -130,6 +133,16 @@ fn version_summary(version: &Value) -> ModrinthVersion {
             .into(),
         game_versions: serde_json::from_value(version["game_versions"].clone()).unwrap_or_default(),
         loaders: serde_json::from_value(version["loaders"].clone()).unwrap_or_default(),
+        file_name: version["files"]
+            .as_array()
+            .and_then(|files| {
+                files
+                    .iter()
+                    .find(|file| file["primary"] == true)
+                    .or_else(|| files.first())
+            })
+            .and_then(|file| file["filename"].as_str())
+            .map(str::to_string),
     }
 }
 
@@ -318,7 +331,15 @@ pub async fn install_modrinth_project(
     if jobs.is_empty() {
         return existing.ok_or_else(|| AppError::new("Ce contenu est déjà installé"));
     }
-
+    let targets: Vec<(String, String)> = jobs
+        .iter()
+        .map(|job| {
+            (
+                job.project_type.clone(),
+                job.project["id"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
     let total = jobs.len();
     let concurrency = state.store.settings()?.download_concurrency.clamp(1, 32);
     let completed = std::sync::Arc::new(AtomicUsize::new(0));
@@ -361,6 +382,16 @@ pub async fn install_modrinth_project(
     .buffer_unordered(concurrency)
     .try_collect::<Vec<_>>()
     .await?;
+    if let Err(error) = crate::providers::cross::remove_duplicates(
+        &state,
+        &instance_id,
+        "modrinth",
+        &targets,
+    )
+    .await
+    {
+        tracing::warn!("Déduplication inter-plateformes ignorée : {error}");
+    }
     entries
         .into_iter()
         .find(|entry| entry.project_id.as_deref() == Some(project_id.as_str()))
@@ -382,7 +413,8 @@ fn resolve_project_tree<'a>(
             return Ok(None);
         }
         if let Some(installed) = common::installed_content(
-            &state.store.game_dir(instance_id),
+            &state.store,
+            instance_id,
             "modrinth",
             project_id,
             version_id,
@@ -475,7 +507,8 @@ async fn install_version(
     )
     .await?;
     common::remove_previous_versions(
-        &game_dir.join(folder),
+        &state.store.instance_dir(instance_id),
+        folder,
         "modrinth",
         project["id"].as_str().unwrap_or(""),
         file_name,
@@ -487,7 +520,12 @@ async fn install_version(
         icon_url: project["icon_url"].as_str().map(str::to_string),
         provider: Some("modrinth".into()),
     };
-    common::write_sidecar(&game_dir.join(folder), file_name, &metadata)?;
+    crate::content_meta::write(
+        &state.store.instance_dir(instance_id),
+        folder,
+        file_name,
+        &metadata,
+    )?;
     Ok(ContentEntry {
         file_name: file_name.into(),
         kind: project_type.into(),
@@ -504,9 +542,23 @@ async fn install_version(
 
 #[cfg(test)]
 mod tests {
-    use super::select_version;
-    use crate::providers::common::{installed_content, ContentMetadata};
+    use super::{select_version, version_summary};
+    use crate::content_meta::ContentMetadata;
+    use crate::providers::common::installed_content;
+    use crate::store::Store;
     use serde_json::json;
+
+    #[test]
+    fn includes_primary_file_name() {
+        let version = version_summary(&json!({
+            "id": "v",
+            "files": [
+                {"primary": false, "filename": "a.jar"},
+                {"primary": true, "filename": "b.jar"}
+            ]
+        }));
+        assert_eq!(version.file_name.as_deref(), Some("b.jar"));
+    }
 
     #[test]
     fn selects_latest_or_explicit_version() {
@@ -532,7 +584,8 @@ mod tests {
     #[test]
     fn recognizes_installed_and_disabled_versions() {
         let directory = tempfile::tempdir().unwrap();
-        let mods = directory.path().join("mods");
+        let store = Store::temporary(directory.path());
+        let mods = store.game_dir("instance").join("mods");
         std::fs::create_dir_all(&mods).unwrap();
         std::fs::write(mods.join("sodium.jar.disabled"), b"mod").unwrap();
         let metadata = ContentMetadata {
@@ -549,16 +602,18 @@ mod tests {
         .unwrap();
 
         let installed =
-            installed_content(directory.path(), "modrinth", "sodium", Some("new")).unwrap();
+            installed_content(&store, "instance", "modrinth", "sodium", Some("new")).unwrap();
         assert_eq!(installed.file_name, "sodium.jar.disabled");
         assert!(!installed.enabled);
-        assert!(installed_content(directory.path(), "modrinth", "sodium", Some("old")).is_none());
+        assert!(installed_content(&store, "instance", "modrinth", "sodium", Some("old")).is_none());
+        assert!(!mods.join(".sodium.jar.xal.json").exists());
     }
 
     #[test]
     fn finds_content_when_another_content_folder_is_missing() {
         let directory = tempfile::tempdir().unwrap();
-        let packs = directory.path().join("resourcepacks");
+        let store = Store::temporary(directory.path());
+        let packs = store.game_dir("instance").join("resourcepacks");
         std::fs::create_dir_all(&packs).unwrap();
         std::fs::write(packs.join("pack.zip"), b"pack").unwrap();
         let metadata = ContentMetadata {
@@ -574,6 +629,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(installed_content(directory.path(), "modrinth", "pack", Some("v1")).is_some());
+        assert!(installed_content(&store, "instance", "modrinth", "pack", Some("v1")).is_some());
     }
 }

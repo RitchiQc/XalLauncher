@@ -3,6 +3,7 @@ mod backup;
 mod branding;
 mod browser;
 mod content;
+mod content_meta;
 mod crash;
 mod download;
 mod error;
@@ -36,6 +37,7 @@ pub struct AppState {
     pub client: reqwest::Client,
     pub processes: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
     pub auth_cancel: AtomicBool,
+    pub(crate) hash_cache: Mutex<HashMap<std::path::PathBuf, providers::cross::CachedHashes>>,
 }
 
 impl AppState {
@@ -45,6 +47,7 @@ impl AppState {
             client: http::client().expect("Impossible d’initialiser le client réseau"),
             processes: Arc::new(Mutex::new(HashMap::new())),
             auth_cancel: AtomicBool::new(false),
+            hash_cache: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -62,6 +65,8 @@ pub fn run() {
         .setup(|app| {
             let root = app.state::<AppState>().store.root().to_path_buf();
             let _ = app.asset_protocol_scope().allow_directory(root, true);
+            let store = app.state::<AppState>().store.clone();
+            tauri::async_runtime::spawn_blocking(move || content_meta::migrate_all(&store));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -107,6 +112,7 @@ pub fn run() {
             providers::horizon::list_horizon_versions,
             providers::horizon::install_horizon_project,
             providers::horizon::install_horizon_modpack,
+            providers::cross::cross_provider_matches,
             content::list_content,
             content::toggle_content,
             content::delete_content,

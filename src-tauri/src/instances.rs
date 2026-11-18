@@ -205,6 +205,10 @@ pub fn duplicate_instance(
         &state.store.game_dir(&id),
         &state.store.game_dir(&destination_id),
     )?;
+    copy_directory(
+        &state.store.instance_dir(&id).join("metadata"),
+        &state.store.instance_dir(&destination_id).join("metadata"),
+    )?;
     let mut instances = state.store.instances()?;
     instances.push(destination.clone());
     state.store.save_instances(&instances)?;

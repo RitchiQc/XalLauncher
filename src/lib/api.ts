@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, AppSettings, BackupEntry, ContentEntry, CrashReport, CurseforgeKeyStatus, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, LoginMode, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
+import type { Account, AppSettings, BackupEntry, ContentEntry, ContentProvider, CrashReport, CrossProviderMatch, CurseforgeKeyStatus, ExportOptions, ExportReport, ImportReport, ImportSummary, Instance, InstanceInput, LaunchResult, Loader, LoaderVersion, LoginMode, MinecraftVersion, ModrinthVersion, ProjectHit, SearchIndex, ServerEntry, ServerStatus, StorageInfo } from "@/types";
 
 export const api = {
   settings: () => invoke<AppSettings>("get_settings"),
@@ -51,6 +51,7 @@ export const api = {
   importInstanceFolder: (path: string, name?: string) => invoke<ImportReport>("import_instance_folder", { path, name }),
   exportInstance: (id: string, destination: string, options: ExportOptions) => invoke<ExportReport>("export_instance", { id, destination, options }),
   content: (instanceId: string, kind: string) => invoke<ContentEntry[]>("list_content", { instanceId, kind }),
+  crossProviderMatches: (instanceId: string, kind: string, provider: ContentProvider) => invoke<CrossProviderMatch[]>("cross_provider_matches", { instanceId, kind, provider }),
   toggleContent: (instanceId: string, kind: string, fileName: string) => invoke<ContentEntry>("toggle_content", { instanceId, kind, fileName }),
   deleteContent: (instanceId: string, kind: string, fileName: string) => invoke<void>("delete_content", { instanceId, kind, fileName }),
   importContent: (instanceId: string, kind: string, sourcePath: string) => invoke<ContentEntry>("import_content", { instanceId, kind, sourcePath }),

@@ -2,7 +2,8 @@ use crate::download::{download_file_with_checksum, Checksum};
 use crate::error::{AppError, Result};
 use crate::http::ensure_success;
 use crate::models::{ContentEntry, Instance, Loader, ProgressEvent, ProjectHit};
-use crate::providers::common::{self, ContentMetadata};
+use crate::content_meta::ContentMetadata;
+use crate::providers::common;
 use crate::providers::modrinth::ModrinthVersion;
 use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::de::DeserializeOwned;
@@ -136,7 +137,7 @@ fn key_status() -> Result<CurseforgeKeyStatus> {
     })
 }
 
-fn api_key() -> Result<String> {
+pub(crate) fn api_key() -> Result<String> {
     crate::secrets::curseforge_key()?.ok_or_else(|| {
         AppError::new(
             "Cette version de XalLauncher ne contient pas de clé CurseForge. Utilisez une release officielle ou ajoutez une clé dans Paramètres > CurseForge.",
@@ -198,7 +199,7 @@ async fn cf_query<T: DeserializeOwned>(
     response_json(response, action).await
 }
 
-async fn cf_post_json<T: DeserializeOwned>(
+pub(crate) async fn cf_post_json<T: DeserializeOwned>(
     client: &reqwest::Client,
     key: &str,
     path: &str,
@@ -337,6 +338,7 @@ fn version_summary(file: &CfFile) -> ModrinthVersion {
             .cloned()
             .collect(),
         loaders: file_loaders(file),
+        file_name: Some(file.file_name.clone()),
     }
 }
 
@@ -583,7 +585,8 @@ fn resolve_project_tree<'a>(
             return Ok(None);
         }
         if let Some(installed) = common::installed_content(
-            &state.store.game_dir(instance_id),
+            &state.store,
+            instance_id,
             "curseforge",
             &project_id.to_string(),
             version_id,
@@ -626,18 +629,19 @@ async fn install_version(
     file: &CfFile,
     project_type: &str,
 ) -> Result<ContentEntry> {
-    let game_dir = state.store.game_dir(instance_id);
-    install_file(&state.client, key, &game_dir, project, file, project_type).await
+    let instance_dir = state.store.instance_dir(instance_id);
+    install_file(&state.client, key, &instance_dir, project, file, project_type).await
 }
 
 async fn install_file(
     client: &reqwest::Client,
     key: &str,
-    game_dir: &Path,
+    instance_dir: &Path,
     project: &CfMod,
     file: &CfFile,
     project_type: &str,
 ) -> Result<ContentEntry> {
+    let game_dir = instance_dir.join("game");
     if project.allow_mod_distribution == Some(false) {
         return Err(AppError::new(format!(
             "L’auteur de {} interdit le téléchargement via l’API CurseForge",
@@ -693,7 +697,7 @@ async fn install_file(
     )
     .await?;
     let project_id = project.id.to_string();
-    common::remove_previous_versions(&game_dir.join(folder), "curseforge", &project_id, file_name);
+    common::remove_previous_versions(instance_dir, folder, "curseforge", &project_id, file_name);
     let metadata = ContentMetadata {
         project_id,
         project_title: project.name.clone(),
@@ -701,7 +705,7 @@ async fn install_file(
         icon_url: logo_url(project),
         provider: Some("curseforge".into()),
     };
-    common::write_sidecar(&game_dir.join(folder), file_name, &metadata)?;
+    crate::content_meta::write(instance_dir, folder, file_name, &metadata)?;
     Ok(ContentEntry {
         file_name: file_name.into(),
         kind: project_type.into(),
@@ -741,6 +745,10 @@ pub async fn install_curseforge_project(
     if jobs.is_empty() {
         return existing.ok_or_else(|| AppError::new("Ce contenu est déjà installé"));
     }
+    let targets: Vec<(String, String)> = jobs
+        .iter()
+        .map(|job| (job.project_type.clone(), job.project.id.to_string()))
+        .collect();
     let total = jobs.len();
     let concurrency = state.store.settings()?.download_concurrency.clamp(1, 32);
     let completed = std::sync::Arc::new(AtomicUsize::new(0));
@@ -785,6 +793,16 @@ pub async fn install_curseforge_project(
     .buffer_unordered(concurrency)
     .try_collect::<Vec<_>>()
     .await?;
+    if let Err(error) = crate::providers::cross::remove_duplicates(
+        &state,
+        &instance_id,
+        "curseforge",
+        &targets,
+    )
+    .await
+    {
+        tracing::warn!("Déduplication inter-plateformes ignorée : {error}");
+    }
     let main_id = project_id.to_string();
     entries
         .into_iter()
@@ -841,6 +859,7 @@ mod tests {
         assert_eq!(version.version_type, "beta");
         assert_eq!(version.game_versions, vec!["1.21.1"]);
         assert_eq!(version.loaders, vec!["Fabric"]);
+        assert_eq!(version.file_name.as_deref(), Some("jei-1.21.1.jar"));
         assert!(is_game_version("1.21.1"));
         assert!(!is_game_version("Fabric"));
     }

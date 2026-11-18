@@ -1,58 +1,36 @@
-use crate::error::Result;
+use crate::content_meta;
 use crate::models::ContentEntry;
-use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ContentMetadata {
-    pub project_id: String,
-    pub project_title: String,
-    pub version_id: String,
-    pub icon_url: Option<String>,
-    #[serde(default)]
-    pub provider: Option<String>,
-}
 
 fn provider_matches(stored: Option<&str>, expected: &str) -> bool {
     stored == Some(expected) || (expected == "modrinth" && stored.is_none())
 }
 
 pub(crate) fn installed_content(
-    game_dir: &Path,
+    store: &crate::store::Store,
+    instance_id: &str,
     provider: &str,
     project_id: &str,
     version_id: Option<&str>,
 ) -> Option<ContentEntry> {
+    let instance_dir = store.instance_dir(instance_id);
+    let game_dir = store.game_dir(instance_id);
     for (kind, folder) in [
         ("mod", "mods"),
         ("resourcepack", "resourcepacks"),
         ("shader", "shaderpacks"),
     ] {
-        let directory = game_dir.join(folder);
-        let Ok(entries) = std::fs::read_dir(&directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with('.') || !name.ends_with(".xal.json") {
-                continue;
-            }
-            let Ok(bytes) = std::fs::read(entry.path()) else {
-                continue;
-            };
-            let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
-                continue;
-            };
+        content_meta::migrate_folder(&instance_dir, folder);
+        for (file_name, metadata) in content_meta::entries(&instance_dir, folder) {
             if metadata.project_id != project_id
                 || !provider_matches(metadata.provider.as_deref(), provider)
                 || version_id.is_some_and(|id| metadata.version_id != id)
             {
                 continue;
             }
-            let base = name.trim_start_matches('.').strip_suffix(".xal.json")?;
-            let enabled_path = directory.join(base);
-            let disabled_path = directory.join(format!("{base}.disabled"));
+            let directory = game_dir.join(folder);
+            let enabled_path = directory.join(&file_name);
+            let disabled_path = directory.join(format!("{file_name}.disabled"));
             let (path, enabled) = if enabled_path.is_file() {
                 (enabled_path, true)
             } else if disabled_path.is_file() {
@@ -82,55 +60,33 @@ pub(crate) fn installed_content(
 }
 
 pub(crate) fn remove_previous_versions(
-    directory: &Path,
+    instance_dir: &Path,
+    folder: &str,
     provider: &str,
     project_id: &str,
     keep_file: &str,
 ) {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with('.') || !name.ends_with(".xal.json") {
-            continue;
-        }
-        let Ok(bytes) = std::fs::read(entry.path()) else {
-            continue;
-        };
-        let Ok(metadata) = serde_json::from_slice::<ContentMetadata>(&bytes) else {
-            continue;
-        };
+    let directory = instance_dir.join("game").join(folder);
+    let keep_file = keep_file.strip_suffix(".disabled").unwrap_or(keep_file);
+    content_meta::migrate_folder(instance_dir, folder);
+    for (file_name, metadata) in content_meta::entries(instance_dir, folder) {
         if metadata.project_id != project_id
             || !provider_matches(metadata.provider.as_deref(), provider)
+            || file_name == keep_file
         {
             continue;
         }
-        let Some(file_name) = name.trim_start_matches('.').strip_suffix(".xal.json") else {
-            continue;
-        };
-        if file_name == keep_file {
-            continue;
-        }
-        let _ = std::fs::remove_file(entry.path());
-        let _ = std::fs::remove_file(directory.join(file_name));
+        content_meta::remove(instance_dir, folder, &file_name);
+        let _ = std::fs::remove_file(directory.join(&file_name));
         let _ = std::fs::remove_file(directory.join(format!("{file_name}.disabled")));
     }
 }
 
-pub(crate) fn write_sidecar(
-    directory: &Path,
-    file_name: &str,
-    metadata: &ContentMetadata,
-) -> Result<()> {
-    let sidecar = directory.join(format!(".{file_name}.xal.json"));
-    std::fs::write(sidecar, serde_json::to_vec_pretty(metadata)?)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{installed_content, remove_previous_versions, ContentMetadata};
+    use super::{installed_content, remove_previous_versions};
+    use crate::content_meta::ContentMetadata;
+    use crate::store::Store;
     use std::fs;
 
     fn metadata(project_id: &str, version_id: &str, provider: Option<&str>) -> ContentMetadata {
@@ -146,7 +102,8 @@ mod tests {
     #[test]
     fn treats_legacy_sidecars_as_modrinth_only() {
         let directory = tempfile::tempdir().unwrap();
-        let mods = directory.path().join("mods");
+        let store = Store::temporary(directory.path());
+        let mods = store.game_dir("instance").join("mods");
         fs::create_dir_all(&mods).unwrap();
         fs::write(mods.join("legacy.jar"), b"mod").unwrap();
         fs::write(
@@ -155,29 +112,43 @@ mod tests {
         )
         .unwrap();
 
-        assert!(installed_content(directory.path(), "modrinth", "42", None).is_some());
-        assert!(installed_content(directory.path(), "curseforge", "42", None).is_none());
+        assert!(installed_content(&store, "instance", "modrinth", "42", None).is_some());
+        assert!(installed_content(&store, "instance", "curseforge", "42", None).is_none());
+        assert!(!mods.join(".legacy.jar.xal.json").exists());
     }
 
     #[test]
     fn removes_only_matching_provider_versions() {
         let directory = tempfile::tempdir().unwrap();
+        let store = Store::temporary(directory.path());
+        let mods = store.game_dir("instance").join("mods");
+        fs::create_dir_all(&mods).unwrap();
         fs::write(
-            directory.path().join(".old.jar.xal.json"),
+            mods.join(".old.jar.xal.json"),
             serde_json::to_vec(&metadata("42", "1", Some("curseforge"))).unwrap(),
         )
         .unwrap();
-        fs::write(directory.path().join("old.jar"), b"old").unwrap();
+        fs::write(mods.join("old.jar"), b"old").unwrap();
         fs::write(
-            directory.path().join(".keep.jar.xal.json"),
+            mods.join(".keep.jar.xal.json"),
             serde_json::to_vec(&metadata("42", "2", Some("modrinth"))).unwrap(),
         )
         .unwrap();
-        fs::write(directory.path().join("keep.jar"), b"keep").unwrap();
+        fs::write(mods.join("keep.jar"), b"keep").unwrap();
 
-        remove_previous_versions(directory.path(), "curseforge", "42", "new.jar");
+        remove_previous_versions(
+            &store.instance_dir("instance"),
+            "mods",
+            "curseforge",
+            "42",
+            "new.jar",
+        );
 
-        assert!(!directory.path().join("old.jar").exists());
-        assert!(directory.path().join("keep.jar").exists());
+        assert!(!mods.join("old.jar").exists());
+        assert!(mods.join("keep.jar").exists());
+        assert!(!store
+            .instance_dir("instance")
+            .join("metadata/mods/old.jar.xal.json")
+            .exists());
     }
 }
