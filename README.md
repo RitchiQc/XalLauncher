@@ -118,7 +118,7 @@ Chaque instance possède un onglet **Modules**. Les réglages sont appliqués au
 - Le chemin choisi est enregistré dans `%APPDATA%\Xaltar\XalLauncher\config\storage.json`.
 - **Paramètres → Stockage** permet d’ouvrir le dossier, de le changer et de reprendre les instances, mods, bibliothèques, assets, runtimes, journaux et sauvegardes. Les chemins absolus des sauvegardes sont réécrits pendant le transfert ; l’ancien dossier est conservé par sécurité, notamment lors d’une copie entre disques.
 - Le changement d’emplacement redémarre XalLauncher. Un jeu en cours bloque l’opération.
-- Les captures d’écran et les images de couverture locales restent affichables quel que soit le dossier choisi, car le protocole `asset` autorise dynamiquement le dossier de données au démarrage.
+- Les captures d’écran et les images de couverture locales restent affichables quel que soit le dossier choisi : le protocole `asset` autorise dynamiquement le dossier de données au démarrage et la CSP autorise `asset:`, `http://asset.localhost` (Windows) ainsi que `https://asset.localhost` dans `img-src`.
 
 ## Démarrage du développement
 

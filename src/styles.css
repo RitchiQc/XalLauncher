@@ -124,4 +124,5 @@
 .storage-current small{font-size:10px;color:var(--muted);margin-top:3px;word-break:break-all}
 .storage-note{font-size:10px;color:var(--muted);line-height:1.6}
 .storage-note code{color:var(--text);font-family:ui-monospace,Consolas,monospace}
+.screenshot-fallback{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)}
 

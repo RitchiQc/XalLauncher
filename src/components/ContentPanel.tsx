@@ -34,8 +34,15 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
   }, [instanceId, kind]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
+    setPaths({});
     if (kind !== "screenshot") return;
-    items.forEach((item) => { void api.contentPath(instanceId, kind, item.fileName).then((path) => setPaths((current) => ({ ...current, [item.fileName]: convertFileSrc(path) }))); });
+    let active = true;
+    items.forEach((item) => {
+      void api.contentPath(instanceId, kind, item.fileName)
+        .then((path) => { if (active) setPaths((current) => ({ ...current, [item.fileName]: convertFileSrc(path) })); })
+        .catch(() => undefined);
+    });
+    return () => { active = false; };
   }, [instanceId, items, kind]);
 
   const importPaths = useCallback(async (selection: string[]) => {
@@ -85,6 +92,14 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
     const result = await perform(() => api.deleteContent(instanceId, kind, item.fileName), "Contenu supprimé");
     if (result !== undefined) await refresh();
   }
+  function forgetPath(fileName: string) {
+    setPaths((current) => {
+      if (!(fileName in current)) return current;
+      const next = { ...current };
+      delete next[fileName];
+      return next;
+    });
+  }
 
   return <section className="content-section">
     {dragging ? <div className="drop-overlay"><Upload size={28} /><strong>Déposez vos fichiers ici</strong><span>{kind === "mod" ? (horizon ? "Fichiers .hmod" : "Fichiers .jar") : kind === "shader" && horizon ? "Fichiers .zip ou .hshader" : "Fichiers .zip"} · plusieurs fichiers acceptés</span></div> : null}
@@ -92,7 +107,7 @@ export function ContentPanel({ instance, kind }: { instance: Instance; kind: "mo
     {kind === "native-mod" ? <div className="browser-compatibility">Les mods natifs sont installés en bundle. Un build natif Horizon est requis pour les charger ; le build actuel ne les exécute pas automatiquement.</div> : null}
     {view === "browse" && downloadable ? <ProjectBrowser kind={kind} instance={instance} installedContent={items} onContentInstalled={refresh} /> : <>
     <div className="section-toolbar"><div><h3>{kind === "mod" ? "Mods installés" : kind === "native-mod" ? "Mods natifs installés" : kind === "world" ? "Vos mondes" : kind === "screenshot" ? "Captures d’écran" : kind === "shader" ? "Shader packs" : "Resource packs"}</h3><span className="muted">{items.length} élément{items.length > 1 ? "s" : ""}</span></div><div><Button variant="ghost" className="icon-button" onClick={() => void refresh()} title="Actualiser"><RefreshCw size={17} /></Button>{!['world', 'screenshot', 'native-mod'].includes(kind) ? <Button variant="secondary" onClick={() => void importFiles()}><Upload size={16} />Importer</Button> : null}</div></div>
-    {loading ? <div className="panel-loading"><RefreshCw className="spin" />Chargement…</div> : items.length === 0 ? <EmptyState icon={kind === "screenshot" ? <Image /> : <FileBox />} title="Rien ici pour le moment" description={kind === "world" ? "Vos mondes Minecraft apparaîtront après votre première partie." : kind === "screenshot" ? "Vos captures réalisées en jeu apparaîtront ici." : kind === "native-mod" ? "Installez des mods natifs depuis le marché Horizon. Ils nécessitent un build natif Horizon pour se charger." : "Installez du contenu depuis l’explorateur ou importez un ou plusieurs fichiers locaux."} /> : kind === "screenshot" ? <div className="screenshot-grid">{items.map((item) => <button className="screenshot-card" key={item.fileName} title={item.fileName}>{paths[item.fileName] ? <img src={paths[item.fileName]} alt={item.fileName} /> : null}<span>{formatDate(item.modifiedAt)}</span><Button variant="danger" className="icon-button" onClick={() => void remove(item)}><Trash2 size={15} /></Button></button>)}</div> : <div className="content-list">{items.map((item) => <article className={item.enabled ? "content-row" : "content-row disabled"} key={item.fileName}>
+    {loading ? <div className="panel-loading"><RefreshCw className="spin" />Chargement…</div> : items.length === 0 ? <EmptyState icon={kind === "screenshot" ? <Image /> : <FileBox />} title="Rien ici pour le moment" description={kind === "world" ? "Vos mondes Minecraft apparaîtront après votre première partie." : kind === "screenshot" ? "Vos captures réalisées en jeu apparaîtront ici." : kind === "native-mod" ? "Installez des mods natifs depuis le marché Horizon. Ils nécessitent un build natif Horizon pour se charger." : "Installez du contenu depuis l’explorateur ou importez un ou plusieurs fichiers locaux."} /> : kind === "screenshot" ? <div className="screenshot-grid">{items.map((item) => <button className="screenshot-card" key={item.fileName} title={item.fileName}>{paths[item.fileName] ? <img src={paths[item.fileName]} alt={item.fileName} onError={() => forgetPath(item.fileName)} /> : <div className="screenshot-fallback"><Image size={22} /></div>}<span>{formatDate(item.modifiedAt)}</span><Button variant="danger" className="icon-button" onClick={() => void remove(item)}><Trash2 size={15} /></Button></button>)}</div> : <div className="content-list">{items.map((item) => <article className={item.enabled ? "content-row" : "content-row disabled"} key={item.fileName}>
       <div className="content-icon">{item.iconUrl ? <img src={item.iconUrl} alt="" /> : kind === "world" ? <Image /> : <FileBox />}</div>
       <div className="content-info"><strong>{item.projectTitle ?? item.fileName}</strong><span>{item.fileName} · {formatBytes(item.size)}</span></div>
       <span className="content-date">{formatDate(item.modifiedAt)}</span>
