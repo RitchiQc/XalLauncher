@@ -126,3 +126,4 @@
 .storage-note code{color:var(--text);font-family:ui-monospace,Consolas,monospace}
 .screenshot-fallback{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)}
 
+.provider-badge.legacy-badge{color:#e8a13c;background:#e8a13c18}

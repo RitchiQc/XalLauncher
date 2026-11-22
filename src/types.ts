@@ -155,6 +155,7 @@ export interface ContentEntry {
   versionId?: string;
   iconUrl?: string;
   provider?: ContentProvider;
+  legacy?: boolean;
 }
 
 export interface ImportFailure {

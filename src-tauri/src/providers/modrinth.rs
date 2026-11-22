@@ -537,6 +537,7 @@ async fn install_version(
         version_id: Some(metadata.version_id),
         icon_url: metadata.icon_url,
         provider: metadata.provider,
+        legacy: false,
     })
 }
 

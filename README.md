@@ -50,14 +50,14 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Lancement natif avec `--resources`, `--game-dir`, `--home`, résolution, plein écran et serveur de démarrage ; le jeton Minecraft est transmis par **stdin** (`--session-stdin`), jamais en ligne de commande.
 - `horizon-prepare --check` est exécuté avant chaque partie ; une préparation incomplète est refaite automatiquement.
 - Marché **Horizon** intégré aux onglets Mods / Mods natifs / Resource packs / Shaders d’une instance Horizon : registre `https://horizon-rust.github.io/horizon-mods/index.json`, filtrage Minecraft 26.3 et des lignes d’API servies par le build (mods 0.2, shaders 0.1 et 0.2), installation vérifiée par SHA-256 et taille.
-- Mods `.hmod` installés dans `horizon-mods/` et activés dans `horizon-mods.txt` (`mod.<id>:true`) ; bundles natifs `.hnmod` extraits dans `horizon-native-mods/<id>/` et activés de la même façon ; resource packs dans `resourcepacks/`, shaders `.hshader` ou `.zip` dans `shaderpacks/`.
+- Mods `.hmod` installés dans `horizon-mods/` et activés dans `horizon-mods.txt` (`mod.<id>:true`) ; mods natifs `.hmod` (`kind = "native-mod"`) stockés en paquets source dans `horizon-native-mods/<id>.hmod` et activés de la même façon ; resource packs dans `resourcepacks/`, shaders `.hshader` ou `.zip` dans `shaderpacks/`.
 - **Serveur officiel Horizon masqué par défaut** : XalLauncher écrit `horizon_official_server.txt` avec l’adresse `play.playhorizon.dev` avant chaque lancement, ce qui empêche Horizon d’ajouter son SMP « Horizon Official » à `servers.dat`. Les entrées déjà présentes sont retirées avec sauvegarde `servers.dat.xal-backup` ; les serveurs du joueur sont conservés. Une option dans `Paramètres > Horizon` permet de réafficher ce serveur.
 
 ### Contenu
 
 - Recherche **Modrinth et CurseForge** de mods, resource packs et shaders directement depuis chaque instance, avec choix du fournisseur.
-- Marché Horizon pour les instances Horizon : mods `.hmod`, mods natifs `.hnmod`, resource packs et shaders compatibles avec Minecraft 26.3, sans exposition des mods Java.
-- Les mods natifs Horizon sont installés en **bundles** et marqués « build requis » : ils ne sont pas compilés par XalLauncher et ne se chargent pas tant qu’un build natif Horizon n’a pas été produit par le launcher officiel.
+- Marché Horizon pour les instances Horizon : mods `.hmod`, mods natifs `.hmod` (paquets source), resource packs et shaders compatibles avec Minecraft 26.3, sans exposition des mods Java.
+- Les mods natifs Horizon sont installés en **paquets source `.hmod`** et marqués « build requis » : ils ne sont pas compilés par XalLauncher et ne se chargent pas tant qu’un build natif Horizon n’a pas été produit par le launcher officiel. Les anciens `.hnmod` (fichiers ou dossiers extraits) sont détectés comme « ancien format — incompatible », ne sont jamais supprimés automatiquement et peuvent être remplacés depuis le marché ou supprimés.
 - Recherche de modpacks **Modrinth, CurseForge et Horizon** depuis la Bibliothèque, avec création automatique d’une nouvelle instance isolée.
 - Scroll infini dans les explorateurs (24 résultats par page, chargement automatique) et tri par pertinence, téléchargements, popularité, nouveautés ou dernière mise à jour.
 - L’explorateur reste ouvert sur la page « Ajouter » après une installation, pour enchaîner plusieurs contenus sans revenir à la liste.
@@ -69,7 +69,7 @@ Launcher Minecraft Java Edition moderne pour **Windows 10/11 x64**, développé 
 - Installation de la dernière publication d’un modpack Modrinth, CurseForge ou Horizon (avec récupération de l’icône du projet), import de fichiers `.mrpack` et des archives `.zip` CurseForge ; les `.hpack` s’installent depuis la Bibliothèque via le registre Horizon.
 - Import de contenus locaux **par lot** : plusieurs `.jar` ou `.zip` à la fois, ou glisser-déposer dans l’onglet Mods / Resource packs / Shaders.
 - Activation/désactivation et suppression de contenus locaux.
-- Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks : code Java exécutable pour Minecraft, contenu `.hmod` sandboxé pour Horizon, bundle `.hnmod` natif destiné à être compilé et exécuté avec les droits du compte.
+- Avertissement explicite avant l’import de mods locaux et l’installation ou l’import de modpacks : code Java exécutable pour Minecraft, contenu `.hmod` sandboxé pour Horizon, paquet natif `.hmod` destiné à être compilé et exécuté avec les droits du compte.
 - Liste des mondes et galerie des captures d’écran.
 - Sauvegardes ZIP des mondes, restauration sécurisée et sauvegarde automatique avant restauration.
 
@@ -263,7 +263,7 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - `src-tauri/src/horizon.rs` : builds Nightly, préparation, JDK 25 et lancement natif Horizon.
 - `src-tauri/src/horizon_servers.rs` : masquage du SMP officiel Horizon (`horizon_official_server.txt`) et nettoyage ciblé de `servers.dat` avec sauvegarde.
 - `src-tauri/src/loaders.rs` : Fabric, Quilt, Forge et NeoForge.
-- `src-tauri/src/providers/` : intégration Modrinth, catalogue CurseForge et registre Horizon (mods `.hmod`, bundles natifs `.hnmod`, shaders `.hshader`, modpacks `.hpack`), avec détection croisée par empreintes (`cross.rs`, `fingerprint.rs`).
+- `src-tauri/src/providers/` : intégration Modrinth, catalogue CurseForge et registre Horizon (mods `.hmod`, paquets natifs `.hmod`, shaders `.hshader`, modpacks `.hpack`), avec détection croisée par empreintes (`cross.rs`, `fingerprint.rs`).
 - `src-tauri/src/providers/curseforge/pack.rs` : import des modpacks CurseForge (`.zip` et catalogue) et overrides.
 - `src-tauri/src/secrets.rs` : clé API CurseForge dans le Coffre d’identification Windows.
 - `src-tauri/src/content.rs` : contenu local.
@@ -297,8 +297,8 @@ Le tag est la source de vérité : le workflow réécrit `package.json` (et son 
 - Discord Rich Presence et la mise à jour automatique des mods ne sont pas implémentés.
 - Les tests de connexion, de possession du jeu et de lancement authentifié exigent un compte Microsoft réel ; ils ne sont pas simulés en CI.
 - **Horizon** ne prend en charge que Minecraft Java Edition 26.3. Les mods Java Fabric/Forge/NeoForge/Quilt sont incompatibles ; le marché Horizon ne les propose pas.
-- Les **mods natifs Horizon** (`native-mod`) sont installés en bundles dans `horizon-native-mods/<id>/` et activés dans `horizon-mods.txt`, mais XalLauncher **ne compile pas** ces mods : ils restent inactifs tant qu’un build natif Horizon n’a pas été produit par le launcher officiel. Les versions marquées `broken_on` sont masquées de l’explorateur ; celles incluses par un modpack sont installées avec l’avertissement « build requis ».
-- Les **modpacks Horizon** (`.hpack`) sont importés dans une nouvelle instance Horizon : le manifeste `horizon-modpack.toml` est validé, chaque mod est téléchargé et vérifié depuis le registre, les overrides autorisés sont copiés. Un modpack comme `Atomic Industry` contient majoritairement des mods natifs : ils seront installés mais nécessiteront un build natif pour se charger.
+- Les **mods natifs Horizon** (`native-mod`) sont installés en paquets source `.hmod` dans `horizon-native-mods/<id>.hmod` et activés dans `horizon-mods.txt`, mais XalLauncher **ne compile pas** ces mods : ils restent inactifs tant qu’un build natif Horizon n’a pas été produit par le launcher officiel. Les versions marquées `broken_on` sont masquées de l’explorateur ; celles incluses par un modpack sont installées avec l’avertissement « build requis ». Le manifeste `horizon-mod.toml` est validé (id, version, API 0.2, `native.game`, pins `horizon`/`mixins`). Les anciens `.hnmod` et dossiers extraits restent listés comme « ancien format — incompatible » : ils ne se chargent plus avec Horizon actuel, ne sont pas supprimés automatiquement et peuvent être remplacés ou supprimés depuis l’onglet Mods natifs.
+- Les **modpacks Horizon** (`.hpack`) sont importés dans une nouvelle instance Horizon : le manifeste `horizon-modpack.toml` est validé, chaque mod est téléchargé et vérifié depuis le registre, les overrides autorisés sont copiés. Les mods natifs du pack sont installés en `.hmod` mais nécessiteront un build natif pour se charger ; les anciens packs qui référencent des projets archivés (comme `Atomic Industry`) ne sont plus proposés par le registre live.
 - Le tag `nightly` est mobile et les tags datés sont supprimés après quelques jours ; XalLauncher met en cache chaque build par empreinte SHA-256. La première préparation prend plusieurs minutes et télécharge aussi un JDK 25.
 - L’onglet **Modules** (Performance, Branding et sauvegarde automatique) est masqué pour Horizon : le client est natif et ces réglages reposent sur la JVM, `options.txt` ou le pipeline Java. Les sauvegardes manuelles des mondes restent disponibles.
 - La signature minisign des projets du registre Horizon et la signature Authenticode de l’exécutable Windows ne sont pas encore vérifiées. L’updater Tauri et le manifeste `SHA256SUMS` des Releases sont signés par minisign.

@@ -22,7 +22,7 @@ export function confirmHorizonContent(content: string): Promise<boolean> {
 
 export function confirmHorizonNative(content: string): Promise<boolean> {
   return confirmAction(
-    `${content} est un mod natif Horizon. Son bundle sera installé pour un prochain build natif : ` +
+    `${content} est un mod natif Horizon. Son paquet source .hmod sera installé pour un prochain build natif : ` +
     "il sera compilé et exécuté avec les droits de votre compte, sans sandbox. " +
     "N’installez que du contenu dont vous faites confiance. Continuer ?",
     "Mod natif Horizon",

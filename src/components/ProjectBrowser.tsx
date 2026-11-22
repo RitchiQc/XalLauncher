@@ -95,15 +95,16 @@ export function ProjectBrowser({ kind, instance, installedContent = EMPTY_CONTEN
   const request = useRef(0);
   const provider: ContentProvider = instance?.loader === "horizon" ? "horizon" : selectedProvider;
   const providerLabel = provider === "horizon" ? "Horizon" : provider === "curseforge" ? "CurseForge" : "Modrinth";
+  const installedEntries = installedContent.filter((item) => !item.legacy);
   const selectedVersion = versions.find((version) => version.id === selectedVersionId);
   const crossFor = (project: ProjectHit) => crossMatches.find((match) => match.projectId === project.projectId);
-  const projectInstalled = (project: ProjectHit) => installedContent.some((item) => matchesProject(item, project, provider)) || Boolean(crossFor(project));
+  const projectInstalled = (project: ProjectHit) => installedEntries.some((item) => matchesProject(item, project, provider)) || Boolean(crossFor(project));
   const crossVersionInstalled = (project: ProjectHit, version?: ModrinthVersion) => {
     const cross = crossFor(project);
     return Boolean(cross && version?.fileName && normalizeFileName(version.fileName) === normalizeFileName(cross.fileName));
   };
   const selectedCross = selectedProject ? crossFor(selectedProject) : undefined;
-  const selectedVersionInstalled = Boolean(selectedProject && (installedContent.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === selectedVersionId) || crossVersionInstalled(selectedProject, selectedVersion)));
+  const selectedVersionInstalled = Boolean(selectedProject && (installedEntries.some((item) => matchesProject(item, selectedProject, provider) && item.versionId === selectedVersionId) || crossVersionInstalled(selectedProject, selectedVersion)));
 
   useEffect(() => {
     if (provider !== "curseforge") {
@@ -282,7 +283,7 @@ export function ProjectBrowser({ kind, instance, installedContent = EMPTY_CONTEN
         {selectedVersion ? <dl className="version-details"><div><dt>Nom</dt><dd>{selectedVersion.name}</dd></div><div><dt>Canal</dt><dd><span className={`version-channel ${selectedVersion.versionType}`}>{selectedVersion.versionType}</span></dd></div><div><dt>Publication</dt><dd>{formatDate(selectedVersion.datePublished)}</dd></div><div><dt>Minecraft</dt><dd>{selectedVersion.gameVersions.join(", ")}</dd></div><div><dt>Loaders</dt><dd>{selectedVersion.loaders.join(", ") || "Tous"}</dd></div></dl> : null}
         {selectedCross ? <p className="provider-note">Déjà installé depuis {installedProviderLabel(selectedCross.installedProvider)} ({selectedCross.fileName}). Une nouvelle installation remplacera ce fichier.</p> : null}
 
-        {provider === "horizon" && kind === "native-mod" ? <p className="provider-note">Ce bundle sera installé dans horizon-native-mods. Il devra être compilé par un build natif Horizon avant de se charger.</p> : null}
+        {provider === "horizon" && kind === "native-mod" ? <p className="provider-note">Ce paquet natif .hmod sera installé dans horizon-native-mods. Il devra être compilé par un build natif Horizon avant de se charger.</p> : null}
       </> : <EmptyState icon={<PackageSearch />} title="Aucune version compatible" description="Ce projet ne propose aucune publication pour cette instance." />}
       <footer className="modal-footer"><Button variant="secondary" disabled={Boolean(installing)} onClick={closeVersions}>Annuler</Button><Button loading={installing === selectedProject.projectId} disabled={!selectedVersionId || versionsLoading || selectedVersionInstalled} onClick={() => void installSelected()}>{selectedVersionInstalled ? <Check size={16} /> : <Download size={16} />}{selectedVersionInstalled ? "Version installée" : projectInstalled(selectedProject) ? "Remplacer par cette version" : "Installer cette version"}</Button></footer>
     </Modal> : null}

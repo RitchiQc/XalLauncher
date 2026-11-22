@@ -1,6 +1,8 @@
 use crate::error::{AppError, Result};
 use crate::models::{ContentEntry, Loader};
-use crate::providers::horizon::{mod_enabled, mod_id_from_file, set_mod_enabled};
+use crate::providers::horizon::{
+    legacy_native_name, mod_enabled, mod_id_from_file, native_package_name, set_mod_enabled,
+};
 use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -76,20 +78,34 @@ pub(crate) fn list_entries(
     }
     crate::content_meta::migrate_folder(&instance_dir, folder_name);
     let mut entries = Vec::new();
+    let horizon = loader == Loader::Horizon;
     for item in fs::read_dir(folder)?.flatten() {
         let name = item.file_name().to_string_lossy().to_string();
         if name.starts_with('.') {
             continue;
         }
-        if loader == Loader::Horizon
+        let path = item.path();
+        let is_dir = item.file_type()?.is_dir();
+        if horizon
             && kind == "mod"
             && !(name.ends_with(".hmod") || name.ends_with(".hmod.disabled"))
         {
             continue;
         }
-        let path = item.path();
-        let is_dir = item.file_type()?.is_dir();
-        if (kind == "world" || kind == "native-mod") != is_dir {
+        let native_legacy =
+            horizon && kind == "native-mod" && (is_dir || legacy_native_name(&name));
+        if horizon
+            && kind == "native-mod"
+            && !is_dir
+            && !native_legacy
+            && !native_package_name(&name)
+        {
+            continue;
+        }
+        if kind == "world" && !is_dir {
+            continue;
+        }
+        if !matches!(kind, "world" | "native-mod") && is_dir {
             continue;
         }
         let file_meta = item.metadata()?;
@@ -98,9 +114,9 @@ pub(crate) fn list_entries(
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         let metadata = crate::content_meta::read(&instance_dir, folder_name, &name);
         entries.push(ContentEntry {
-            enabled: if loader == Loader::Horizon && kind == "native-mod" {
-                mod_enabled(&game_dir, &name)
-            } else if loader == Loader::Horizon && kind == "mod" {
+            enabled: if horizon && kind == "native-mod" {
+                !name.ends_with(".disabled") && mod_enabled(&game_dir, mod_id_from_file(&name))
+            } else if horizon && kind == "mod" {
                 !name.ends_with(".disabled") && mod_enabled(&game_dir, mod_id_from_file(&name))
             } else {
                 !name.ends_with(".disabled")
@@ -118,6 +134,7 @@ pub(crate) fn list_entries(
             version_id: metadata.as_ref().map(|meta| meta.version_id.clone()),
             icon_url: metadata.as_ref().and_then(|meta| meta.icon_url.clone()),
             provider: metadata.and_then(|meta| meta.provider),
+            legacy: native_legacy,
         });
     }
     entries.sort_by_key(|entry| std::cmp::Reverse(entry.modified_at));
@@ -139,11 +156,12 @@ pub fn toggle_content(
     let game_dir = state.store.game_dir(&instance_id);
     let path = game_dir.join(folder_for_kind(loader, &kind)?).join(name);
     if loader == Loader::Horizon && kind == "native-mod" {
-        if !path.is_dir() {
+        if !path.exists() {
             return Err(AppError::new("Mod natif Horizon introuvable"));
         }
-        let enabled = mod_enabled(&game_dir, name);
-        set_mod_enabled(&game_dir, name, !enabled)?;
+        let id = mod_id_from_file(name);
+        let enabled = mod_enabled(&game_dir, id);
+        set_mod_enabled(&game_dir, id, !enabled)?;
         return list_entries(&state.store, &instance_id, &kind)?
             .into_iter()
             .find(|entry| entry.file_name == name)
@@ -332,6 +350,7 @@ fn copy_content(
         version_id: metadata.as_ref().map(|meta| meta.version_id.clone()),
         icon_url: metadata.as_ref().and_then(|meta| meta.icon_url.clone()),
         provider: metadata.and_then(|meta| meta.provider),
+        legacy: false,
     })
 }
 
@@ -451,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_installed_native_mod_bundles() {
+    fn lists_installed_native_mod_packages() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::temporary(directory.path());
         store
@@ -483,8 +502,10 @@ mod tests {
         let game_dir = store.game_dir("instance");
         let native = game_dir.join("horizon-native-mods");
         std::fs::create_dir_all(native.join("zoom")).unwrap();
+        std::fs::write(native.join("atlas.hmod"), b"package").unwrap();
+        std::fs::write(native.join("legacy.hnmod"), b"legacy").unwrap();
         std::fs::write(native.join("stray.txt"), b"ignored").unwrap();
-        let metadata = ContentMetadata {
+        let zoom_metadata = ContentMetadata {
             project_id: "zoom".into(),
             project_title: "Zoom".into(),
             version_id: "2.0.0".into(),
@@ -493,23 +514,62 @@ mod tests {
         };
         std::fs::write(
             native.join(".zoom.xal.json"),
-            serde_json::to_vec_pretty(&metadata).unwrap(),
+            serde_json::to_vec_pretty(&zoom_metadata).unwrap(),
         )
         .unwrap();
-        std::fs::write(game_dir.join("horizon-mods.txt"), b"mod.zoom:true\n").unwrap();
+        let atlas_metadata = ContentMetadata {
+            project_id: "atlas".into(),
+            project_title: "Atlas".into(),
+            version_id: "1.0.0".into(),
+            icon_url: None,
+            provider: Some("horizon".into()),
+        };
+        crate::content_meta::write(
+            &store.instance_dir("instance"),
+            "horizon-native-mods",
+            "atlas.hmod",
+            &atlas_metadata,
+        )
+        .unwrap();
+        std::fs::write(
+            game_dir.join("horizon-mods.txt"),
+            b"mod.zoom:true\nmod.atlas:true\n",
+        )
+        .unwrap();
 
         let entries = list_entries(&store, "instance", "native-mod").unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].file_name, "zoom");
-        assert!(entries[0].enabled);
-        assert_eq!(entries[0].project_id.as_deref(), Some("zoom"));
-        assert_eq!(entries[0].version_id.as_deref(), Some("2.0.0"));
-        assert_eq!(entries[0].provider.as_deref(), Some("horizon"));
+        assert_eq!(entries.len(), 3);
+        let zoom = entries
+            .iter()
+            .find(|entry| entry.file_name == "zoom")
+            .unwrap();
+        assert!(zoom.enabled);
+        assert!(zoom.legacy);
+        assert_eq!(zoom.project_id.as_deref(), Some("zoom"));
+        assert_eq!(zoom.version_id.as_deref(), Some("2.0.0"));
+        assert_eq!(zoom.provider.as_deref(), Some("horizon"));
+        let atlas = entries
+            .iter()
+            .find(|entry| entry.file_name == "atlas.hmod")
+            .unwrap();
+        assert!(atlas.enabled);
+        assert!(!atlas.legacy);
+        assert_eq!(atlas.project_id.as_deref(), Some("atlas"));
+        let legacy = entries
+            .iter()
+            .find(|entry| entry.file_name == "legacy.hnmod")
+            .unwrap();
+        assert!(!legacy.enabled);
+        assert!(legacy.legacy);
         assert!(!native.join(".zoom.xal.json").exists());
         assert!(store
             .instance_dir("instance")
             .join("metadata/horizon-native-mods/zoom.xal.json")
+            .is_file());
+        assert!(store
+            .instance_dir("instance")
+            .join("metadata/horizon-native-mods/atlas.hmod.xal.json")
             .is_file());
     }
 

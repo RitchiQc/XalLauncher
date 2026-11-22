@@ -53,6 +53,7 @@ pub(crate) fn installed_content(
                 version_id: Some(metadata.version_id),
                 icon_url: metadata.icon_url,
                 provider: metadata.provider,
+                legacy: false,
             });
         }
     }

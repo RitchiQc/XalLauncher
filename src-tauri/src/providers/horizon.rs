@@ -18,9 +18,7 @@ const MOD_API: &str = "0.2";
 const SHADER_APIS: [&str; 2] = ["0.1", "0.2"];
 const MODPACK_FORMAT: &str = "1";
 const NATIVE_DIR: &str = "horizon-native-mods";
-const NATIVE_MAX_ENTRIES: usize = 512;
-const NATIVE_MAX_FILE: u64 = 32 * 1024 * 1024;
-const NATIVE_MAX_TOTAL: u64 = 128 * 1024 * 1024;
+const NATIVE_MANIFEST_MAX: u64 = 256 * 1024;
 const DOWNLOAD_HOSTS: [&str; 2] = [
     "https://github.com/horizon-rust/horizon-mods/releases/download/",
     "https://github.com/ludovic111/horizon-mods/releases/download/",
@@ -77,6 +75,22 @@ struct File {
     url: String,
     size: u64,
     sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NativeManifest {
+    id: String,
+    version: String,
+    #[serde(default)]
+    api: Option<String>,
+    native: NativePins,
+}
+
+#[derive(Debug, Deserialize)]
+struct NativePins {
+    game: String,
+    horizon: String,
+    mixins: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,10 +527,13 @@ fn installed_horizon(
             } else {
                 continue;
             };
+            if kind == "native-mod" && !native_package_name(&file_name) {
+                continue;
+            }
             let enabled = if kind == "mod" {
                 file_enabled && mod_enabled(&game_dir, mod_id_from_file(&file_name))
             } else if kind == "native-mod" {
-                file_enabled && mod_enabled(&game_dir, &file_name)
+                file_enabled && mod_enabled(&game_dir, mod_id_from_file(&file_name))
             } else {
                 file_enabled
             };
@@ -541,6 +558,7 @@ fn installed_horizon(
                 version_id: Some(metadata.version_id),
                 icon_url: metadata.icon_url,
                 provider: Some("horizon".into()),
+                legacy: false,
             });
         }
     }
@@ -548,65 +566,72 @@ fn installed_horizon(
 }
 
 pub(crate) fn mod_id_from_file(file_name: &str) -> &str {
-    file_name
-        .strip_suffix(".hmod")
-        .or_else(|| file_name.strip_suffix(".hmod.disabled"))
-        .unwrap_or(file_name)
+    let name = file_name.strip_suffix(".disabled").unwrap_or(file_name);
+    name.strip_suffix(".hmod")
+        .or_else(|| name.strip_suffix(".hnmod"))
+        .unwrap_or(name)
 }
 
-fn extract_hnmod(archive: &Path, destination: &Path) -> Result<()> {
-    let file = fs::File::open(archive)?;
-    let mut zip = zip::ZipArchive::new(file)?;
-    if zip.len() > NATIVE_MAX_ENTRIES {
-        return Err(AppError::new("Bundle natif Horizon trop volumineux"));
-    }
-    let mut total = 0_u64;
-    for index in 0..zip.len() {
-        let entry = zip.by_index(index)?;
-        let path = entry
-            .enclosed_name()
-            .ok_or_else(|| AppError::new("Chemin dangereux dans le bundle natif Horizon"))?
-            .to_path_buf();
-        let target = destination.join(&path);
-        if !target.starts_with(destination) {
-            return Err(AppError::new(
-                "Chemin dangereux dans le bundle natif Horizon",
-            ));
-        }
-        if entry.is_dir() {
-            fs::create_dir_all(&target)?;
-            continue;
-        }
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut output = fs::File::create(&target)?;
-        let mut limited = entry.take(NATIVE_MAX_FILE + 1);
-        let copied = std::io::copy(&mut limited, &mut output)?;
-        if copied > NATIVE_MAX_FILE {
-            return Err(AppError::new("Fichier natif Horizon trop volumineux"));
-        }
-        total += copied;
-        if total > NATIVE_MAX_TOTAL {
-            return Err(AppError::new("Bundle natif Horizon trop volumineux"));
-        }
-    }
-    Ok(())
+pub(crate) fn native_package_name(name: &str) -> bool {
+    let name = name.strip_suffix(".disabled").unwrap_or(name);
+    safe_file_name(name) && name.to_ascii_lowercase().ends_with(".hmod")
 }
 
-fn validate_native_manifest(directory: &Path, project_id: &str, version_id: &str) -> Result<()> {
-    let bytes = fs::read(directory.join("horizon-native.json"))?;
-    let manifest: serde_json::Value = serde_json::from_slice(&bytes)?;
-    let valid = manifest["schema"].as_u64() == Some(1)
-        && manifest["game"].as_str() == Some(crate::horizon::HORIZON_MINECRAFT)
-        && manifest["id"].as_str() == Some(project_id)
-        && manifest["version"].as_str() == Some(version_id);
+pub(crate) fn legacy_native_name(name: &str) -> bool {
+    name.strip_suffix(".disabled")
+        .unwrap_or(name)
+        .to_ascii_lowercase()
+        .ends_with(".hnmod")
+}
+
+fn horizon_download_authorized(url: &str) -> bool {
+    DOWNLOAD_HOSTS.iter().any(|host| url.starts_with(host))
+}
+
+fn validate_native_manifest(text: &str, project_id: &str, version: &Version) -> Result<()> {
+    let manifest: NativeManifest = toml::from_str(text)
+        .map_err(|error| AppError::new(format!("Manifeste natif Horizon invalide : {error}")))?;
+    let pins = version
+        .api
+        .as_deref()
+        .and_then(|api| api.strip_prefix("native-1/"))
+        .and_then(|rest| rest.split_once('/'))
+        .filter(|(horizon, mixins)| !horizon.is_empty() && !mixins.is_empty());
+    let valid = manifest.id == project_id
+        && manifest.version == version.version
+        && manifest.native.game == crate::horizon::HORIZON_MINECRAFT
+        && manifest
+            .api
+            .as_deref()
+            .is_none_or(|api| api_line(api, MOD_API))
+        && pins.is_some_and(|(horizon, mixins)| {
+            manifest.native.horizon == horizon && manifest.native.mixins == mixins
+        });
     if !valid {
         return Err(AppError::new(
-            "Le manifeste du bundle natif Horizon ne correspond pas au registre",
+            "Le manifeste du paquet natif Horizon ne correspond pas au registre",
         ));
     }
     Ok(())
+}
+
+fn validate_native_package(archive: &Path, project_id: &str, version: &Version) -> Result<()> {
+    let file = fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file)?;
+    let entry = zip.by_name("horizon-mod.toml").map_err(|_| {
+        AppError::new("Manifeste horizon-mod.toml introuvable dans le paquet natif")
+    })?;
+    if entry.size() > NATIVE_MANIFEST_MAX {
+        return Err(AppError::new("Manifeste natif Horizon trop volumineux"));
+    }
+    let mut text = String::new();
+    entry
+        .take(NATIVE_MANIFEST_MAX + 1)
+        .read_to_string(&mut text)?;
+    if text.len() as u64 > NATIVE_MANIFEST_MAX {
+        return Err(AppError::new("Manifeste natif Horizon trop volumineux"));
+    }
+    validate_native_manifest(&text, project_id, version)
 }
 
 async fn install_horizon_native(
@@ -620,17 +645,17 @@ async fn install_horizon_native(
     if !safe_file_name(&project.id) {
         return Err(AppError::new("Identifiant de mod natif Horizon dangereux"));
     }
-    if !safe_file_name(&version.file.name)
-        || !version.file.name.to_ascii_lowercase().ends_with(".hnmod")
-        || !DOWNLOAD_HOSTS
-            .iter()
-            .any(|host| version.file.url.starts_with(host))
-    {
-        return Err(AppError::new("Téléchargement natif Horizon non autorisé"));
+    if !native_package_name(&version.file.name) {
+        return Err(AppError::new(
+            "Paquet natif Horizon invalide : fichier .hmod attendu",
+        ));
+    }
+    if !horizon_download_authorized(&version.file.url) {
+        return Err(AppError::new("Hôte de téléchargement Horizon non autorisé"));
     }
     let directory = game_dir.join(NATIVE_DIR);
     fs::create_dir_all(&directory)?;
-    let archive = directory.join(format!(".{}.hnmod.download", project.id));
+    let archive = directory.join(format!(".{}.hmod.download", project.id));
     let _ = fs::remove_file(&archive);
     let checksum = Checksum::Sha256(sha256(&version.file.sha256)?);
     if let Err(error) = download_file_with_checksum(
@@ -655,26 +680,25 @@ async fn install_horizon_native(
             project.name, version.file.size
         )));
     }
-    let temporary = directory.join(format!(".{}.tmp", project.id));
-    let _ = fs::remove_dir_all(&temporary);
-    fs::create_dir_all(&temporary)?;
-    if let Err(error) = extract_hnmod(&archive, &temporary)
-        .and_then(|_| validate_native_manifest(&temporary, &project.id, &version.version))
-    {
-        let _ = fs::remove_dir_all(&temporary);
+    if let Err(error) = validate_native_package(&archive, &project.id, version) {
         let _ = fs::remove_file(&archive);
         return Err(error);
     }
-    let installed = directory.join(&project.id);
-    if installed.exists() {
-        fs::remove_dir_all(&installed)?;
+    let file_name = format!("{}.hmod", project.id);
+    let destination = directory.join(&file_name);
+    if destination.is_dir() {
+        let _ = fs::remove_dir_all(&destination);
+    } else {
+        let _ = fs::remove_file(&destination);
     }
-    if let Err(error) = fs::rename(&temporary, &installed) {
-        let _ = fs::remove_dir_all(&temporary);
+    if let Err(error) = fs::rename(&archive, &destination) {
         let _ = fs::remove_file(&archive);
         return Err(error.into());
     }
-    let _ = fs::remove_file(&archive);
+    let _ = fs::remove_dir_all(directory.join(&project.id));
+    let _ = fs::remove_file(directory.join(format!("{}.hnmod", project.id)));
+    let _ = fs::remove_file(directory.join(format!("{}.hmod.disabled", project.id)));
+    let _ = fs::remove_file(directory.join(format!("{}.hnmod.disabled", project.id)));
     let metadata = ContentMetadata {
         project_id: project.id.clone(),
         project_title: project.name.clone(),
@@ -682,19 +706,21 @@ async fn install_horizon_native(
         icon_url: project.icon.clone(),
         provider: Some("horizon".into()),
     };
-    crate::content_meta::write(instance_dir, NATIVE_DIR, &project.id, &metadata)?;
+    crate::content_meta::write(instance_dir, NATIVE_DIR, &file_name, &metadata)?;
+    crate::content_meta::remove(instance_dir, NATIVE_DIR, &project.id);
     set_mod_enabled(&game_dir, &project.id, true)?;
     Ok(ContentEntry {
-        file_name: project.id.clone(),
+        file_name,
         kind: "native-mod".into(),
         enabled: true,
-        size: directory_size(&installed),
+        size: destination.metadata()?.len(),
         modified_at: chrono::Utc::now(),
         project_id: Some(project.id.clone()),
         project_title: Some(project.name.clone()),
         version_id: Some(version.version.clone()),
         icon_url: project.icon.clone(),
         provider: Some("horizon".into()),
+        legacy: false,
     })
 }
 
@@ -806,6 +832,7 @@ pub async fn install_horizon_project(
         version_id: Some(version.version.clone()),
         icon_url: project.icon.clone(),
         provider: Some("horizon".into()),
+        legacy: false,
     })
 }
 
@@ -1209,7 +1236,8 @@ pub async fn install_horizon_modpack(
 #[cfg(test)]
 mod tests {
     use super::{
-        browser_kind, mod_enabled, override_allowed, pack_requirement, set_mod_enabled,
+        browser_kind, horizon_download_authorized, legacy_native_name, mod_enabled,
+        native_package_name, override_allowed, pack_requirement, set_mod_enabled,
         validate_native_manifest, version_compatible, version_revoked, File, Index, PackManifest,
         PackMod, Project, Revoked, Version,
     };
@@ -1379,14 +1407,34 @@ mod tests {
 
     #[test]
     fn validates_a_native_manifest_against_the_registry() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::write(
-            directory.path().join("horizon-native.json"),
-            r#"{"schema":1,"game":"26.3","id":"zoom","version":"2.0.0"}"#,
-        )
-        .unwrap();
-        assert!(validate_native_manifest(directory.path(), "zoom", "2.0.0").is_ok());
-        assert!(validate_native_manifest(directory.path(), "zoom", "1.0.0").is_err());
+        let text = "id = \"zoom\"\nversion = \"1.0.0\"\napi = \"0.2\"\n\n[native]\ngame = \"26.3\"\nhorizon = \"abc\"\nmixins = \"def\"\n";
+        let native_version = version("26.3", "native-1/abc/def", &"a".repeat(64));
+        assert!(validate_native_manifest(text, "zoom", &native_version).is_ok());
+        assert!(validate_native_manifest(text, "other", &native_version).is_err());
+        let mut wrong_version = version("26.3", "native-1/abc/def", &"a".repeat(64));
+        wrong_version.version = "2.0.0".into();
+        assert!(validate_native_manifest(text, "zoom", &wrong_version).is_err());
+        let wrong_pins = version("26.3", "native-1/aaa/bbb", &"a".repeat(64));
+        assert!(validate_native_manifest(text, "zoom", &wrong_pins).is_err());
+        let wrong_game = "id = \"zoom\"\nversion = \"1.0.0\"\napi = \"0.2\"\n\n[native]\ngame = \"26.2\"\nhorizon = \"abc\"\nmixins = \"def\"\n";
+        assert!(validate_native_manifest(wrong_game, "zoom", &native_version).is_err());
+    }
+
+    #[test]
+    fn accepts_only_hmod_native_packages_from_the_registry() {
+        assert!(native_package_name("zoom.hmod"));
+        assert!(native_package_name("zoom.hmod.disabled"));
+        assert!(!native_package_name("zoom.hnmod"));
+        assert!(!native_package_name("../zoom.hmod"));
+        assert!(legacy_native_name("zoom.hnmod"));
+        assert!(legacy_native_name("zoom.hnmod.disabled"));
+        assert!(!legacy_native_name("zoom.hmod"));
+        assert!(horizon_download_authorized(
+            "https://github.com/horizon-rust/horizon-mods/releases/download/x/zoom.hmod"
+        ));
+        assert!(!horizon_download_authorized(
+            "https://example.com/zoom.hmod"
+        ));
     }
 
     #[test]

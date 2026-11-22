@@ -230,6 +230,8 @@ pub struct ContentEntry {
     pub icon_url: Option<String>,
     #[serde(default)]
     pub provider: Option<String>,
+    #[serde(default)]
+    pub legacy: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
